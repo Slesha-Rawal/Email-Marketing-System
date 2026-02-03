@@ -150,14 +150,14 @@ function Contact() {
                 <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                    <th className="px-6 py-4 text-left">
+                    {/* <th className="px-6 py-4 text-left">
                         <input
                         type="checkbox"
                         checked={selectedContacts.length === contacts.length}
                         onChange={toggleAll}
                         className="w-4 h-4 rounded border-gray-300"
                         />
-                    </th>
+                    </th> */}
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
                         Name
                     </th>
@@ -178,14 +178,14 @@ function Contact() {
                 <tbody className="divide-y divide-gray-200">
                     {filteredContacts.map((contact) => (
                     <tr key={contact.contact_id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
+                        {/* <td className="px-6 py-4">
                         <input
                             type="checkbox"
                             checked={selectedContacts.includes(contact.contact_id)}
                             onChange={() => toggleContact(contact.contact_id)}
                             className="w-4 h-4 rounded border-gray-300"
                         />
-                        </td>
+                        </td> */}
                         <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
