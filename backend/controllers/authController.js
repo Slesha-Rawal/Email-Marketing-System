@@ -1,4 +1,4 @@
-import db from "../config/database.js";
+import db from "../config/dbConnect.js";
 
 const login = (req, res) => {
   const query = "SELECT * FROM user WHERE user_email = ? AND user_password = ?";

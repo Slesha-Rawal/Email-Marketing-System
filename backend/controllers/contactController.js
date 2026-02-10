@@ -1,4 +1,4 @@
-import db from "../config/database.js";
+import db from "../config/dbConnect.js";
 import fs from "fs";
 import csv from "csv-parser";
 
@@ -48,7 +48,7 @@ const addContact = (req, res) => {
     (err, result) => {
       if (err) {
         console.error("Error adding contact:", err);
-        return res.status(500).json({ error: "Failed to add contact" });
+        // return res.status(500).json({ error: "Failed to add contact" });
       }
       return res.json({
         message: "Contact added successfully",
