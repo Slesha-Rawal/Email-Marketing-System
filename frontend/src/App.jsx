@@ -6,6 +6,8 @@ import AddContact from "./pages/AddContact.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import Templates from "./pages/Templates.jsx";
 import TemplateBuilder from "./pages/TemplateBuilder.jsx";
+import Campaigns from "./pages/Campaigns.jsx";
+import CreateCampaign from "./pages/CreateCampaign.jsx";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 function App() {
@@ -19,6 +21,8 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/template-builder" element={<TemplateBuilder />} />
+          <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/create-campaign" element={<CreateCampaign />} />
         </Routes>
       </BrowserRouter>
     </>
