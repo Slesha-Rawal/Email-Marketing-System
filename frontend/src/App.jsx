@@ -8,6 +8,7 @@ import Templates from "./pages/Templates.jsx";
 import TemplateBuilder from "./pages/TemplateBuilder.jsx";
 import Campaigns from "./pages/Campaigns.jsx";
 import CreateCampaign from "./pages/CreateCampaign.jsx";
+import Analytics from "./pages/Analytics.jsx";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Route path="/template-builder" element={<TemplateBuilder />} />
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/create-campaign" element={<CreateCampaign />} />
+          <Route path="/analytics" element={<Analytics />} />
         </Routes>
       </BrowserRouter>
     </>
