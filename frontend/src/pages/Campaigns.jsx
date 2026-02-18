@@ -34,7 +34,7 @@ const Campaigns = () => {
       sendDate: '2026-01-01 09:30 AM'
     },
     {
-      id: 4,
+      id: 4,   
       name: 'New Launch',
       subject: 'Introducing out new product',
       status: 'Sent',
