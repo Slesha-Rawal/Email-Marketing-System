@@ -1,22 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Mail, Bold, Italic, Underline, List, ListOrdered, Link, Image, 
-  AlignLeft, AlignCenter, AlignRight, AlignJustify, Monitor, Smartphone,
-  Save, ArrowLeft
-} from 'lucide-react';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import {
+  Mail,
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Link,
+  Image,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Monitor,
+  Smartphone,
+  Save,
+  ArrowLeft,
+} from "lucide-react";
+import Header from "../components/Header";
+import Sidebar from "../components/Sidebar";
 
 const TemplateBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const editTemplate = location.state?.template;
 
-  const [templateName, setTemplateName] = useState('');
-  const [templateSubject, setTemplateSubject] = useState('');
-  const [emailContent, setEmailContent] = useState('');
-  const [previewMode, setPreviewMode] = useState('desktop');
+  const [templateName, setTemplateName] = useState("");
+  const [templateSubject, setTemplateSubject] = useState("");
+  const [emailContent, setEmailContent] = useState("");
+  const [previewMode, setPreviewMode] = useState("desktop");
 
   const defaultContent = `Welcome to Our Community! 🎉
 
@@ -45,7 +58,7 @@ The Kung Fu Quiz Team`;
 
   const handleSave = () => {
     if (!templateName || !templateSubject || !emailContent) {
-      alert('Please fill in all fields');
+      alert("Please fill in all fields");
       return;
     }
 
@@ -54,63 +67,65 @@ The Kung Fu Quiz Team`;
       title: templateName,
       subject: templateSubject,
       content: emailContent,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
-    console.log('Saving template:', templateData);
-    alert('Template saved successfully!');
-    navigate('/templates');
+    console.log("Saving template:", templateData);
+    alert("Template saved successfully!");
+    navigate("/templates");
   };
 
   const toolbarButtons = [
-    { icon: Bold, title: 'Bold' },
-    { icon: Italic, title: 'Italic' },
-    { icon: Underline, title: 'Underline' },
+    { icon: Bold, title: "Bold" },
+    { icon: Italic, title: "Italic" },
+    { icon: Underline, title: "Underline" },
     { divider: true },
-    { icon: List, title: 'Bullet List' },
-    { icon: ListOrdered, title: 'Numbered List' },
+    { icon: List, title: "Bullet List" },
+    { icon: ListOrdered, title: "Numbered List" },
     { divider: true },
-    { icon: Link, title: 'Insert Link' },
-    { icon: Image, title: 'Insert Image' },
+    { icon: Link, title: "Insert Link" },
+    { icon: Image, title: "Insert Image" },
     { divider: true },
-    { icon: AlignLeft, title: 'Align Left' },
-    { icon: AlignCenter, title: 'Align Center' },
-    { icon: AlignRight, title: 'Align Right' },
-    { icon: AlignJustify, title: 'Justify' },
+    { icon: AlignLeft, title: "Align Left" },
+    { icon: AlignCenter, title: "Align Center" },
+    { icon: AlignRight, title: "Align Right" },
+    { icon: AlignJustify, title: "Justify" },
   ];
 
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto p-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200">
             {/* Header Section */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-white">
+              <div className="flex items-center gap-4">
                 <button
-                  onClick={() => navigate('/templates')}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  onClick={() => navigate("/templates")}
+                  className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all duration-200"
                   title="Back to templates"
                 >
                   <ArrowLeft size={24} className="text-gray-600" />
                 </button>
-                <div className="bg-indigo-600 text-white p-3 rounded-lg">
+                <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-3 rounded-xl shadow-md">
                   <Mail size={28} />
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800">
-                    {editTemplate ? 'Edit Template' : 'Create New Template'}
+                    {editTemplate ? "Edit Template" : "Create New Template"}
                   </h2>
-                  <p className="text-gray-600 text-sm">Design your email template with live preview</p>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Design your email template with live preview
+                  </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={handleSave}
-                className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg transition-all duration-200 font-medium"
               >
                 <Save size={20} />
                 Save Template
@@ -118,96 +133,119 @@ The Kung Fu Quiz Team`;
             </div>
 
             {/* Main Grid Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
               {/* Editor Section */}
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Template Name
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                    <span>Template Name</span>
+                    <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     placeholder="e.g., Welcome Email, Newsletter Template"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 hover:border-gray-400"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Email Subject
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                    <span>Email Subject</span>
+                    <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     placeholder="e.g., Welcome to our community!"
                     value={templateSubject}
                     onChange={(e) => setTemplateSubject(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 hover:border-gray-400"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Email Content
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                    <span>Email Content</span>
+                    <span className="text-red-500">*</span>
                   </label>
-                  
+
                   {/* Toolbar */}
-                  <div className="flex items-center gap-1 p-2 bg-gray-50 border border-gray-300 rounded-t-lg flex-wrap">
-                    {toolbarButtons.map((button, index) => (
+                  <div className="flex items-center gap-1 p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-300 rounded-t-lg flex-wrap shadow-sm">
+                    {toolbarButtons.map((button, index) =>
                       button.divider ? (
-                        <div key={`divider-${index}`} className="w-px h-6 bg-gray-300 mx-1"></div>
+                        <div
+                          key={`divider-${index}`}
+                          className="w-px h-6 bg-gray-400 mx-1"
+                        ></div>
                       ) : (
                         <button
                           key={index}
-                          className="p-2 hover:bg-gray-200 rounded transition-colors"
+                          className="p-2 hover:bg-white hover:shadow-md rounded-md transition-all duration-200 text-gray-700 hover:text-indigo-600 active:scale-95"
                           title={button.title}
                           type="button"
                         >
                           <button.icon size={18} />
                         </button>
-                      )
-                    ))}
+                      ),
+                    )}
                   </div>
 
                   {/* Content Editor */}
                   <textarea
                     value={emailContent}
                     onChange={(e) => setEmailContent(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 border-t-0 rounded-b-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[500px] font-sans resize-none"
+                    className="w-full px-4 py-4 border-2 border-gray-300 border-t-0 rounded-b-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[500px] font-sans resize-none transition-all duration-200 leading-relaxed hover:border-gray-400"
                     placeholder="Start typing your email content... Use [Name] for personalization."
                   />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Tip: Use placeholders like [Name], [Email], [Company] for personalization
-                  </p>
+                  <div className="flex items-start gap-2 mt-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                    <span className="text-indigo-600 font-semibold text-xs mt-0.5">
+                      💡 TIP:
+                    </span>
+                    <p className="text-xs text-indigo-700 leading-relaxed">
+                      Use placeholders like{" "}
+                      <code className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded font-mono text-indigo-800">
+                        [Name]
+                      </code>
+                      ,{" "}
+                      <code className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded font-mono text-indigo-800">
+                        [Email]
+                      </code>
+                      ,{" "}
+                      <code className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded font-mono text-indigo-800">
+                        [Company]
+                      </code>{" "}
+                      for personalization
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Preview Section */}
               <div className="space-y-4">
                 <div className="sticky top-0">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-4">
                     <label className="block text-sm font-semibold text-gray-700">
                       Live Email Preview
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
                       <button
-                        onClick={() => setPreviewMode('desktop')}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-                          previewMode === 'desktop' 
-                            ? 'bg-indigo-600 text-white shadow-sm' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        onClick={() => setPreviewMode("desktop")}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all duration-200 text-sm font-medium ${
+                          previewMode === "desktop"
+                            ? "bg-white text-indigo-600 shadow-md"
+                            : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
                         <Monitor size={16} />
                         Desktop
                       </button>
                       <button
-                        onClick={() => setPreviewMode('mobile')}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-                          previewMode === 'mobile' 
-                            ? 'bg-indigo-600 text-white shadow-sm' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        onClick={() => setPreviewMode("mobile")}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all duration-200 text-sm font-medium ${
+                          previewMode === "mobile"
+                            ? "bg-white text-indigo-600 shadow-md"
+                            : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
                         <Smartphone size={16} />
@@ -217,61 +255,89 @@ The Kung Fu Quiz Team`;
                   </div>
 
                   {/* Email Preview Box */}
-                  <div className={`bg-gray-50 border-2 border-gray-200 rounded-lg overflow-hidden transition-all ${
-                    previewMode === 'mobile' ? 'max-w-[375px] mx-auto' : ''
-                  }`}>
+                  <div
+                    className={`bg-white border-2 border-gray-300 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${
+                      previewMode === "mobile" ? "max-w-[375px] mx-auto" : ""
+                    }`}
+                  >
                     {/* Email Header */}
-                    <div className="bg-white border-b border-gray-200 p-4">
-                      <div className="text-xs text-gray-500 mb-1">Subject:</div>
-                      <div className="font-semibold text-gray-800">
-                        {templateSubject || 'Email Subject Preview'}
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 p-5">
+                      <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                        Subject:
+                      </div>
+                      <div className="font-semibold text-gray-800 text-lg">
+                        {templateSubject || "Email Subject Preview"}
                       </div>
                     </div>
 
                     {/* Email Body */}
-                    <div className="bg-white p-6 min-h-[500px]">
+                    <div className="bg-white p-8 min-h-[500px]">
                       {emailContent ? (
-                        <div className="space-y-3">
-                          {emailContent.split('\n').map((line, index) => {
+                        <div className="space-y-4">
+                          {emailContent.split("\n").map((line, index) => {
                             // Check if line is a bullet point
-                            if (line.trim().startsWith('•')) {
+                            if (line.trim().startsWith("•")) {
                               return (
-                                <div key={index} className="flex gap-2">
-                                  <span>•</span>
-                                  <span>{line.trim().substring(1).trim()}</span>
+                                <div
+                                  key={index}
+                                  className="flex gap-3 items-start"
+                                >
+                                  <span className="text-indigo-600 font-bold">
+                                    •
+                                  </span>
+                                  <span className="text-gray-700 leading-relaxed">
+                                    {line.trim().substring(1).trim()}
+                                  </span>
                                 </div>
                               );
                             }
                             // Check if line looks like a link
-                            if (line.trim() && (line.includes('http') || line.toLowerCase().includes('guide') || line.toLowerCase().includes('page'))) {
+                            if (
+                              line.trim() &&
+                              (line.includes("http") ||
+                                line.toLowerCase().includes("guide") ||
+                                line.toLowerCase().includes("page"))
+                            ) {
                               return (
-                                <a key={index} href="#" className="text-indigo-600 hover:underline block">
+                                <a
+                                  key={index}
+                                  href="#"
+                                  className="text-indigo-600 hover:text-indigo-700 hover:underline block font-medium transition-colors"
+                                >
                                   {line.trim()}
                                 </a>
                               );
                             }
                             // Regular paragraph
                             return line.trim() ? (
-                              <p key={index} className="text-gray-800">
+                              <p
+                                key={index}
+                                className="text-gray-800 leading-relaxed"
+                              >
                                 {line}
                               </p>
                             ) : (
-                              <div key={index} className="h-2"></div>
+                              <div key={index} className="h-3"></div>
                             );
                           })}
                         </div>
                       ) : (
-                        <div className="text-center text-gray-400 py-12">
-                          <Mail size={48} className="mx-auto mb-3 opacity-50" />
-                          <p>Your email preview will appear here</p>
+                        <div className="text-center text-gray-400 py-20">
+                          <Mail size={56} className="mx-auto mb-4 opacity-30" />
+                          <p className="text-lg font-medium">
+                            Your email preview will appear here
+                          </p>
+                          <p className="text-sm mt-2 text-gray-400">
+                            Start typing to see the preview
+                          </p>
                         </div>
                       )}
                     </div>
 
                     {/* Email Footer */}
-                    <div className="bg-gray-100 p-4 border-t border-gray-200">
-                      <p className="text-xs text-gray-600 text-center">
-                        This is a preview of your email template
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-5 border-t-2 border-gray-200">
+                      <p className="text-xs text-gray-600 text-center font-medium">
+                        📧 This is a preview of your email template
                       </p>
                     </div>
                   </div>
@@ -280,24 +346,25 @@ The Kung Fu Quiz Team`;
             </div>
 
             {/* Bottom Action Bar */}
-            <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
+            <div className="flex items-center justify-between px-8 py-6 border-t-2 border-gray-200 bg-gray-50">
               <button
-                onClick={() => navigate('/templates')}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                onClick={() => navigate("/templates")}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-white hover:shadow-md transition-all duration-200 font-medium"
               >
                 Cancel
               </button>
               <div className="flex gap-3">
                 <button
                   type="button"
-                  className="px-6 py-2 border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+                  className="px-6 py-3 border-2 border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:shadow-md transition-all duration-200 font-medium"
                 >
                   Save as Draft
                 </button>
-                <button 
+                <button
                   onClick={handleSave}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg transition-all duration-200 font-medium flex items-center gap-2"
                 >
+                  <Save size={18} />
                   Save & Publish
                 </button>
               </div>
