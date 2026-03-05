@@ -54,6 +54,9 @@ function validation(values) {
             if (res.data === "success") {
                 console.log("Login successful");
                 navigate("/contact");
+            } else if (res.data === "error") {
+                console.log("Server error occurred");
+                setErrors({ login: "Server error. Please try again." });
             } else {
                 console.log("Login failed. Backend returned:", res.data);
                 setErrors({ login: "Invalid email or password" });
