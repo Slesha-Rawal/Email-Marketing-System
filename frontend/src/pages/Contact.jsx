@@ -1,383 +1,415 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Sidebar from "../components/Sidebar";
-import Header from "../components/Header";
-import { Search, Plus, Edit2, Trash2, User } from "lucide-react";
+import { Layers, Plus, Search, Users } from "lucide-react";
+import Sidebar from "../components/Sidebar.jsx";
+import Header from "../components/Header.jsx";
+import api from "../lib/api.js";
+import { useAuth } from "../context/AuthContext.jsx";
+import AllContactsTab from "../components/contacts/AllContactsTab.jsx";
+import GroupContactsTab from "../components/contacts/GroupContactsTab.jsx";
+import EditContactModal from "../components/contacts/EditContactModal.jsx";
+
+const initialFormState = {
+  contact_name: "",
+  contact_email: "",
+  contact_status: "active",
+};
 
 function Contact() {
-    const navigate = useNavigate();
-    const [searchTerm, setSearchTerm] = useState("");
-    const [selectedContacts, setSelectedContacts] = useState([]);
-    const [contacts, setContacts] = useState([]);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [currentContact, setCurrentContact] = useState(null);
-    const [formData, setFormData] = useState({
-        contact_name: "",
-        contact_email: "",
-        status: "Active",
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManageContacts = user?.role === "marketing";
+
+  const [activeTab, setActiveTab] = useState("all");
+  const [allSearchTerm, setAllSearchTerm] = useState("");
+  const [groupSearchTerm, setGroupSearchTerm] = useState("");
+
+  const [contacts, setContacts] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const [groupContacts, setGroupContacts] = useState([]);
+
+  const [selectedContactIds, setSelectedContactIds] = useState([]);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [currentContact, setCurrentContact] = useState(null);
+  const [formData, setFormData] = useState(initialFormState);
+
+  const [pageError, setPageError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [groupError, setGroupError] = useState("");
+
+  const fetchContacts = async () => {
+    try {
+      const response = await api.get("/contacts");
+      setContacts(response.data);
+      setPageError("");
+    } catch (error) {
+      setPageError(error.response?.data?.error || "Failed to load contacts");
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+      const response = await api.get("/contact-groups");
+      const nextGroups = response.data;
+      setGroups(nextGroups);
+
+      if (!selectedGroupId && nextGroups.length > 0) {
+        setSelectedGroupId(nextGroups[0].group_id);
+      }
+
+      if (
+        selectedGroupId &&
+        !nextGroups.some((group) => group.group_id === selectedGroupId)
+      ) {
+        setSelectedGroupId(
+          nextGroups.length > 0 ? nextGroups[0].group_id : null,
+        );
+      }
+
+      setGroupError("");
+    } catch (error) {
+      setGroupError(error.response?.data?.error || "Failed to load groups");
+    }
+  };
+
+  const fetchGroupContacts = async (groupId) => {
+    if (!groupId) {
+      setGroupContacts([]);
+      return;
+    }
+
+    try {
+      const response = await api.get(`/contact-groups/${groupId}/contacts`);
+      setGroupContacts(response.data);
+      setGroupError("");
+    } catch (error) {
+      setGroupContacts([]);
+      setGroupError(
+        error.response?.data?.error || "Failed to load grouped contacts",
+      );
+    }
+  };
+
+  useEffect(() => {
+    fetchContacts();
+    fetchGroups();
+  }, []);
+
+  useEffect(() => {
+    fetchGroupContacts(selectedGroupId);
+    setSelectedContactIds([]);
+  }, [selectedGroupId]);
+
+  const openEditModal = (contact) => {
+    setCurrentContact(contact);
+    setFormData({
+      contact_name: contact.contact_name,
+      contact_email: contact.contact_email,
+      contact_status: contact.contact_status,
     });
+    setFormError("");
+    setShowEditModal(true);
+  };
 
-  // Fetch contacts from backend
-    useEffect(() => {
-        fetchContacts();
-    }, []);
+  const handleFormChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
 
-    const fetchContacts = async () => {
-        try {
-        const response = await axios.get("http://localhost:3001/api/contacts");
-        setContacts(response.data);
-        } catch (error) {
-        console.error("Error fetching contacts:", error);
-        }
-    };
+  const handleUpdateContact = async (event) => {
+    event.preventDefault();
 
-    // Add new contact
-    const handleAddContact = async (e) => {
-        e.preventDefault();
-        try {
-        await axios.post("http://localhost:3001/api/contacts", formData);
-        setShowAddModal(false);
-        setFormData({ contact_name: "", contact_email: "", status: "Active" });
-        fetchContacts();
-        } catch (error) {
-        console.error("Error adding contact:", error);
-        }
-    };
+    try {
+      await api.put(`/contacts/${currentContact.contact_id}`, formData);
+      setShowEditModal(false);
+      setCurrentContact(null);
+      setFormData(initialFormState);
+      fetchContacts();
+      if (selectedGroupId) {
+        fetchGroupContacts(selectedGroupId);
+      }
+    } catch (error) {
+      setFormError(error.response?.data?.error || "Failed to update contact");
+    }
+  };
 
-    // Update contact
-    const handleUpdateContact = async (e) => {
-        e.preventDefault();
-        try {
-        await axios.put(
-            `http://localhost:3001/api/contacts/${currentContact.contact_id}`,
-            formData
-        );
-        setShowEditModal(false);
-        setCurrentContact(null);
-        setFormData({ contact_name: "", contact_email: "", status: "Active" });
-        fetchContacts();
-        } catch (error) {
-        console.error("Error updating contact:", error);
-        }
-    };
+  const handleDeleteContact = async (id) => {
+    if (!window.confirm("Delete this contact?")) {
+      return;
+    }
 
-    // Delete contact
-    const handleDeleteContact = async (id) => {
-        if (window.confirm("Are you sure you want to delete this contact?")) {
-        try {
-            await axios.delete(`http://localhost:3001/api/contacts/${id}`);
-            fetchContacts();
-        } catch (error) {
-            console.error("Error deleting contact:", error);
-        }
-        }
-    };
+    try {
+      await api.delete(`/contacts/${id}`);
+      fetchContacts();
+      if (selectedGroupId) {
+        fetchGroupContacts(selectedGroupId);
+      }
+    } catch (error) {
+      setPageError(error.response?.data?.error || "Failed to delete contact");
+    }
+  };
 
-    // Open edit modal with contact data
-    const openEditModal = (contact) => {
-        setCurrentContact(contact);
-        setFormData({
-        contact_name: contact.contact_name,
-        contact_email: contact.contact_email,
-        status: contact.status,
-        });
-        setShowEditModal(true);
-    };
+  const handleCreateGroup = async (groupNameInput) => {
+    const groupName = groupNameInput?.trim();
 
-    const toggleContact = (id) => {
-        setSelectedContacts((prev) =>
-        prev.includes(id) ? prev.filter((cId) => cId !== id) : [...prev, id]
-        );
-    };
+    if (!groupName) {
+      setGroupError("Group name is required");
+      return false;
+    }
 
-    const toggleAll = () => {
-        setSelectedContacts(
-        selectedContacts.length === contacts.length
-            ? []
-            : contacts.map((c) => c.contact_id)
-        );
-    };
+    try {
+      const response = await api.post("/contact-groups", {
+        group_name: groupName,
+      });
+      setSelectedGroupId(response.data.group_id);
+      await fetchGroups();
+      await fetchGroupContacts(response.data.group_id);
+      setGroupError("");
+      return true;
+    } catch (error) {
+      setGroupError(error.response?.data?.error || "Failed to create group");
+      return false;
+    }
+  };
 
-    const filteredContacts = contacts.filter(
-        (contact) =>
-        contact.contact_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.contact_email.toLowerCase().includes(searchTerm.toLowerCase())
+  const handleDeleteGroup = async () => {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    if (!window.confirm("Delete this group?")) {
+      return;
+    }
+
+    try {
+      await api.delete(`/contact-groups/${selectedGroupId}`);
+      setSelectedGroupId(null);
+      setGroupContacts([]);
+      await fetchGroups();
+    } catch (error) {
+      setGroupError(error.response?.data?.error || "Failed to delete group");
+    }
+  };
+
+  const handleAssignContacts = async () => {
+    if (!selectedGroupId) {
+      setGroupError("Select a group first");
+      return;
+    }
+
+    if (selectedContactIds.length === 0) {
+      setGroupError("Select at least one contact to assign");
+      return;
+    }
+
+    try {
+      await api.post(`/contact-groups/${selectedGroupId}/contacts`, {
+        contactIds: selectedContactIds,
+      });
+
+      setSelectedContactIds([]);
+      await fetchGroupContacts(selectedGroupId);
+      await fetchGroups();
+      setGroupError("");
+    } catch (error) {
+      setGroupError(
+        error.response?.data?.error || "Failed to add contacts to group",
+      );
+    }
+  };
+
+  const handleRemoveFromGroup = async (contactId) => {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    try {
+      await api.delete(
+        `/contact-groups/${selectedGroupId}/contacts/${contactId}`,
+      );
+      await fetchGroupContacts(selectedGroupId);
+      await fetchGroups();
+    } catch (error) {
+      setGroupError(
+        error.response?.data?.error || "Failed to remove contact from group",
+      );
+    }
+  };
+
+  const toggleSelectedContact = (contactId) => {
+    setSelectedContactIds((prev) =>
+      prev.includes(contactId)
+        ? prev.filter((id) => id !== contactId)
+        : [...prev, contactId],
     );
+  };
 
-    return (
-        <div className="flex h-screen bg-gray-50">
-        {/* Sidebar Component */}
-        <Sidebar />
+  const selectedGroup = useMemo(
+    () => groups.find((group) => group.group_id === selectedGroupId) || null,
+    [groups, selectedGroupId],
+  );
 
-        {/* Main Content */}
-        <div className="flex-1 ml-64 flex flex-col">
-            <Header />
+  const groupedIds = useMemo(
+    () => new Set(groupContacts.map((contact) => contact.contact_id)),
+    [groupContacts],
+  );
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-auto p-8">
-            {/* Page Title and Action Bar */}
-            <div className="flex items-center justify-between mb-6">
-                <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
-                <button
+  const availableContacts = useMemo(
+    () => contacts.filter((contact) => !groupedIds.has(contact.contact_id)),
+    [contacts, groupedIds],
+  );
+
+  const filteredContacts = useMemo(
+    () =>
+      contacts.filter(
+        (contact) =>
+          contact.contact_name
+            .toLowerCase()
+            .includes(allSearchTerm.toLowerCase()) ||
+          contact.contact_email
+            .toLowerCase()
+            .includes(allSearchTerm.toLowerCase()),
+      ),
+    [contacts, allSearchTerm],
+  );
+
+  const filteredGroupContacts = useMemo(
+    () =>
+      groupContacts.filter(
+        (contact) =>
+          contact.contact_name
+            .toLowerCase()
+            .includes(groupSearchTerm.toLowerCase()) ||
+          contact.contact_email
+            .toLowerCase()
+            .includes(groupSearchTerm.toLowerCase()),
+      ),
+    [groupContacts, groupSearchTerm],
+  );
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar />
+
+      <div className="flex-1 ml-64 flex flex-col">
+        <Header />
+
+        <div className="flex-1 overflow-auto p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {canManageContacts
+                  ? "Create, group, and organize your mailing audience."
+                  : "Admin access is view-only for contacts and groups."}
+              </p>
+            </div>
+            {canManageContacts && activeTab === "all" && (
+              <button
                 onClick={() => navigate("/add-contact")}
                 className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium"
-                >
+              >
                 <Plus className="w-5 h-5" />
                 Add new contact
+              </button>
+            )}
+          </div>
+
+          <div className="mb-6 bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={
+                    activeTab === "all"
+                      ? "Search contacts"
+                      : "Search grouped contacts"
+                  }
+                  value={activeTab === "all" ? allSearchTerm : groupSearchTerm}
+                  onChange={(event) => {
+                    if (activeTab === "all") {
+                      setAllSearchTerm(event.target.value);
+                      return;
+                    }
+                    setGroupSearchTerm(event.target.value);
+                  }}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shrink-0">
+                <button
+                  onClick={() => setActiveTab("all")}
+                  className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium ${
+                    activeTab === "all"
+                      ? "bg-indigo-600 text-white"
+                      : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  All
                 </button>
+                <button
+                  onClick={() => setActiveTab("group")}
+                  className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium ${
+                    activeTab === "group"
+                      ? "bg-indigo-600 text-white"
+                      : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  <Layers className="h-4 w-4" />
+                  Group
+                </button>
+              </div>
             </div>
+          </div>
 
-            {/* Search */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                <div className="flex items-center gap-4">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                    type="text"
-                    placeholder="Search Contacts"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-                </div>
+          {pageError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {pageError}
             </div>
+          )}
 
-            {/* Contacts Table */}
-            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                    {/* <th className="px-6 py-4 text-left">
-                        <input
-                        type="checkbox"
-                        checked={selectedContacts.length === contacts.length}
-                        onChange={toggleAll}
-                        className="w-4 h-4 rounded border-gray-300"
-                        />
-                    </th> */}
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                        Name
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                        Email
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                        Status
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                        Added Date
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                        Actions
-                    </th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {filteredContacts.map((contact) => (
-                    <tr key={contact.contact_id} className="hover:bg-gray-50">
-                        {/* <td className="px-6 py-4">
-                        <input
-                            type="checkbox"
-                            checked={selectedContacts.includes(contact.contact_id)}
-                            onChange={() => toggleContact(contact.contact_id)}
-                            className="w-4 h-4 rounded border-gray-300"
-                        />
-                        </td> */}
-                        <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                            <User className="w-4 h-4 text-gray-600" />
-                            </div>
-                            <span className="font-medium text-gray-900">
-                            {contact.contact_name}
-                            </span>
-                        </div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                        {contact.contact_email}
-                        </td>
-                        <td className="px-6 py-4">
-                        <span
-                            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                            contact.status === "Active"
-                                ? "bg-indigo-100 text-indigo-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                        >
-                            {contact.status}
-                        </span>
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                        {new Date(contact.added_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                            <button
-                            onClick={() => openEditModal(contact)}
-                            className="text-gray-400 hover:text-indigo-600"
-                            >
-                            <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                            onClick={() =>
-                                handleDeleteContact(contact.contact_id)
-                            }
-                            className="text-gray-400 hover:text-red-600"
-                            >
-                            <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
-                        </td>
-                    </tr>
-                    ))}
-                </tbody>
-                </table>
-            </div>
-            </div>
+          {activeTab === "all" ? (
+            <AllContactsTab
+              contacts={filteredContacts}
+              canManageContacts={canManageContacts}
+              onEdit={openEditModal}
+              onDelete={handleDeleteContact}
+            />
+          ) : (
+            <GroupContactsTab
+              canManageContacts={canManageContacts}
+              groups={groups}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={setSelectedGroupId}
+              selectedGroup={selectedGroup}
+              groupError={groupError}
+              onCreateGroup={handleCreateGroup}
+              onDeleteGroup={handleDeleteGroup}
+              availableContacts={availableContacts}
+              selectedContactIds={selectedContactIds}
+              onToggleSelectedContact={toggleSelectedContact}
+              onAssignContacts={handleAssignContacts}
+              groupContacts={filteredGroupContacts}
+              onRemoveFromGroup={handleRemoveFromGroup}
+            />
+          )}
         </div>
+      </div>
 
-        {/* Add Contact Modal */}
-        {showAddModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 w-full max-w-md">
-                <h2 className="text-2xl font-bold mb-6">Add New Contact</h2>
-                <form onSubmit={handleAddContact}>
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Name
-                    </label>
-                    <input
-                    type="text"
-                    value={formData.contact_name}
-                    onChange={(e) =>
-                        setFormData({ ...formData, contact_name: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    />
-                </div>
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Email
-                    </label>
-                    <input
-                    type="email"
-                    value={formData.contact_email}
-                    onChange={(e) =>
-                        setFormData({ ...formData, contact_email: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    />
-                </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Status
-                    </label>
-                    <select
-                    value={formData.status}
-                    onChange={(e) =>
-                        setFormData({ ...formData, status: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                    <option value="Active">Active</option>
-                    <option value="Unsubscribed">Unsubscribed</option>
-                    </select>
-                </div>
-                <div className="flex gap-4">
-                    <button
-                    type="submit"
-                    className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700"
-                    >
-                    Add Contact
-                    </button>
-                    <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
-                    >
-                    Cancel
-                    </button>
-                </div>
-                </form>
-            </div>
-            </div>
-        )}
-
-        {/* Edit Contact Modal */}
-        {showEditModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 w-full max-w-md">
-                <h2 className="text-2xl font-bold mb-6">Edit Contact</h2>
-                <form onSubmit={handleUpdateContact}>
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Name
-                    </label>
-                    <input
-                    type="text"
-                    value={formData.contact_name}
-                    onChange={(e) =>
-                        setFormData({ ...formData, contact_name: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    />
-                </div>
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Email
-                    </label>
-                    <input
-                    type="email"
-                    value={formData.contact_email}
-                    onChange={(e) =>
-                        setFormData({ ...formData, contact_email: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    />
-                </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
-                    Status
-                    </label>
-                    <select
-                    value={formData.status}
-                    onChange={(e) =>
-                        setFormData({ ...formData, status: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                    <option value="Active">Active</option>
-                    <option value="Unsubscribed">Unsubscribed</option>
-                    </select>
-                </div>
-                <div className="flex gap-4">
-                    <button
-                    type="submit"
-                    className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700"
-                    >
-                    Update Contact
-                    </button>
-                    <button
-                    type="button"
-                    onClick={() => setShowEditModal(false)}
-                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
-                    >
-                    Cancel
-                    </button>
-                </div>
-                </form>
-            </div>
-            </div>
-        )}
-        </div>
-    );
+      <EditContactModal
+        show={showEditModal}
+        formData={formData}
+        formError={formError}
+        onChange={handleFormChange}
+        onClose={() => setShowEditModal(false)}
+        onSubmit={handleUpdateContact}
+      />
+    </div>
+  );
 }
 
 export default Contact;
