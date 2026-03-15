@@ -1,8 +1,37 @@
 import db from "../config/dbConnect.js";
 import fs from "fs";
 import csv from "csv-parser";
+import { queryDb } from "../utils/db.js";
 
-// Helper function to map CSV columns to database columns
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VALID_STATUSES = new Set(["active", "unsubscribed", "bounced"]);
+
+const normalizeContactPayload = (payload) => {
+  const contact_name = payload.contact_name?.trim();
+  const contact_email = payload.contact_email?.trim().toLowerCase();
+  const requestedStatus = payload.contact_status?.trim().toLowerCase();
+
+  return {
+    contact_name,
+    contact_email,
+    contact_status: VALID_STATUSES.has(requestedStatus)
+      ? requestedStatus
+      : "active",
+  };
+};
+
+const validateContactPayload = ({ contact_name, contact_email }) => {
+  if (!contact_name || !contact_email) {
+    return "Name and email are required";
+  }
+
+  if (!EMAIL_PATTERN.test(contact_email)) {
+    return "Enter a valid email address";
+  }
+
+  return null;
+};
+
 const mapColumnName = (column) => {
   const columnMap = {
     name: "contact_name",
@@ -11,90 +40,117 @@ const mapColumnName = (column) => {
     email: "contact_email",
     "email address": "contact_email",
     "e-mail": "contact_email",
-    status: "status",
+    status: "contact_status",
   };
 
   const normalized = column.toLowerCase().trim();
   return columnMap[normalized] || column;
 };
 
-// Get all contacts
-const getAllContacts = (req, res) => {
-  const query = "SELECT * FROM contacts ORDER BY added_at DESC";
+const getAllContacts = async (req, res) => {
+  try {
+    const data = await queryDb(
+      `SELECT c.contact_id, c.contact_name, c.contact_email, c.contact_status,
+              c.created_at, c.updated_at, u.user_name AS created_by_name
+       FROM contacts c
+       LEFT JOIN users u ON u.user_id = c.created_by
+       ORDER BY c.created_at DESC`,
+    );
 
-  db.query(query, (err, data) => {
-    if (err) {
-      console.error("Error fetching contacts:", err);
-      return res.status(500).json({ error: "Failed to fetch contacts" });
-    }
     return res.json(data);
-  });
+  } catch (err) {
+    console.error("Error fetching contacts:", err);
+    return res.status(500).json({ error: "Failed to fetch contacts" });
+  }
 };
 
-// Add new contact
-const addContact = (req, res) => {
-  const { contact_name, contact_email, status } = req.body;
+const addContact = async (req, res) => {
+  const payload = normalizeContactPayload(req.body);
+  const validationMessage = validateContactPayload(payload);
 
-  if (!contact_name || !contact_email) {
-    return res.status(400).json({ error: "Name and email are required" });
+  if (validationMessage) {
+    return res.status(400).json({ error: validationMessage });
   }
 
-  const query =
-    "INSERT INTO contacts (contact_name, contact_email, status, added_at) VALUES (?, ?, ?, NOW())";
+  try {
+    const result = await queryDb(
+      `INSERT INTO contacts (contact_name, contact_email, contact_status, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [
+        payload.contact_name,
+        payload.contact_email,
+        payload.contact_status,
+        req.user.userId,
+      ],
+    );
 
-  db.query(
-    query,
-    [contact_name, contact_email, status || "Active"],
-    (err, result) => {
-      if (err) {
-        console.error("Error adding contact:", err);
-        // return res.status(500).json({ error: "Failed to add contact" });
-      }
-      return res.json({
-        message: "Contact added successfully",
-        id: result.insertId,
-      });
+    return res.status(201).json({
+      message: "Contact added successfully",
+      id: result.insertId,
+    });
+  } catch (err) {
+    console.error("Error adding contact:", err);
+
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Contact email already exists" });
     }
-  );
+
+    return res.status(500).json({ error: "Failed to add contact" });
+  }
 };
 
-// Update contact
-const updateContact = (req, res) => {
+const updateContact = async (req, res) => {
   const { id } = req.params;
-  const { contact_name, contact_email, status } = req.body;
+  const payload = normalizeContactPayload(req.body);
+  const validationMessage = validateContactPayload(payload);
 
-  if (!contact_name || !contact_email) {
-    return res.status(400).json({ error: "Name and email are required" });
+  if (validationMessage) {
+    return res.status(400).json({ error: validationMessage });
   }
 
-  const query =
-    "UPDATE contacts SET contact_name = ?, contact_email = ?, status = ? WHERE contact_id = ?";
+  try {
+    const result = await queryDb(
+      `UPDATE contacts
+       SET contact_name = ?, contact_email = ?, contact_status = ?
+       WHERE contact_id = ?`,
+      [payload.contact_name, payload.contact_email, payload.contact_status, id],
+    );
 
-  db.query(query, [contact_name, contact_email, status, id], (err, result) => {
-    if (err) {
-      console.error("Error updating contact:", err);
-      return res.status(500).json({ error: "Failed to update contact" });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Contact not found" });
     }
+
     return res.json({ message: "Contact updated successfully" });
-  });
+  } catch (err) {
+    console.error("Error updating contact:", err);
+
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Contact email already exists" });
+    }
+
+    return res.status(500).json({ error: "Failed to update contact" });
+  }
 };
 
-// Delete contact
-const deleteContact = (req, res) => {
+const deleteContact = async (req, res) => {
   const { id } = req.params;
 
-  const query = "DELETE FROM contacts WHERE contact_id = ?";
+  try {
+    const result = await queryDb("DELETE FROM contacts WHERE contact_id = ?", [
+      id,
+    ]);
 
-  db.query(query, [id], (err, result) => {
-    if (err) {
-      console.error("Error deleting contact:", err);
-      return res.status(500).json({ error: "Failed to delete contact" });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Contact not found" });
     }
+
     return res.json({ message: "Contact deleted successfully" });
-  });
+  } catch (err) {
+    console.error("Error deleting contact:", err);
+    return res.status(500).json({ error: "Failed to delete contact" });
+  }
 };
 
-// Upload CSV
 const uploadCSV = (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file uploaded" });
@@ -106,24 +162,22 @@ const uploadCSV = (req, res) => {
   fs.createReadStream(filePath)
     .pipe(csv())
     .on("data", (data) => {
-      // Map CSV columns to database columns
       const mappedData = {};
       Object.keys(data).forEach((key) => {
         const mappedKey = mapColumnName(key);
         mappedData[mappedKey] = data[key];
       });
 
-      // Validate required fields
-      if (mappedData.contact_name && mappedData.contact_email) {
+      const payload = normalizeContactPayload(mappedData);
+      if (payload.contact_name && payload.contact_email) {
         results.push({
-          contact_name: mappedData.contact_name.trim(),
-          contact_email: mappedData.contact_email.trim(),
-          status: mappedData.status?.trim() || "active",
+          contact_name: payload.contact_name,
+          contact_email: payload.contact_email,
+          contact_status: payload.contact_status,
         });
       }
     })
     .on("end", () => {
-      // Delete uploaded file
       fs.unlinkSync(filePath);
 
       if (results.length === 0) {
@@ -133,14 +187,13 @@ const uploadCSV = (req, res) => {
         });
       }
 
-      // Bulk insert contacts
       const query =
-        "INSERT INTO contacts (contact_name, contact_email, status, added_at) VALUES ?";
+        "INSERT IGNORE INTO contacts (contact_name, contact_email, contact_status, created_by) VALUES ?";
       const values = results.map((contact) => [
         contact.contact_name,
         contact.contact_email,
-        contact.status,
-        new Date(),
+        contact.contact_status,
+        req.user.userId,
       ]);
 
       db.query(query, [values], (err, result) => {
@@ -149,19 +202,19 @@ const uploadCSV = (req, res) => {
           return res.status(500).json({ message: "Error uploading contacts" });
         }
 
-        res.json({
-          message: `Successfully uploaded ${result.affectedRows} contacts`,
+        return res.json({
+          message: `Imported ${result.affectedRows} contacts successfully`,
           count: result.affectedRows,
+          skipped: results.length - result.affectedRows,
         });
       });
     })
     .on("error", (err) => {
-      // Delete uploaded file in case of error
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
       console.error("Error parsing CSV:", err);
-      res.status(500).json({ message: "Error parsing CSV file" });
+      return res.status(500).json({ message: "Error parsing CSV file" });
     });
 };
 

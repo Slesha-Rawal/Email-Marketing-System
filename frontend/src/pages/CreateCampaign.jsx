@@ -130,16 +130,30 @@ const CreateCampaign = () => {
     event.preventDefault();
     setError("");
 
-    if (
-      !formData.campaign_name.trim() ||
-      !formData.template_id ||
-      !formData.campaign_subject.trim() ||
-      !formData.sender_name.trim() ||
-      !formData.sender_email.trim()
-    ) {
-      setError(
-        "Campaign name, template, subject, sender name, and sender email are required",
-      );
+    const missingFields = [];
+
+    if (!formData.campaign_name.trim()) {
+      missingFields.push("Campaign name");
+    }
+
+    if (!String(formData.template_id || "").trim()) {
+      missingFields.push("Template");
+    }
+
+    if (!formData.campaign_subject.trim()) {
+      missingFields.push("Email subject");
+    }
+
+    if (!formData.sender_name.trim()) {
+      missingFields.push("Sender name");
+    }
+
+    if (!formData.sender_email.trim()) {
+      missingFields.push("Sender email");
+    }
+
+    if (missingFields.length > 0) {
+      setError(`Please fill required fields: ${missingFields.join(", ")}`);
       return;
     }
 
@@ -157,7 +171,11 @@ const CreateCampaign = () => {
       sender_name: formData.sender_name.trim(),
       reply_to_email: formData.reply_to_email.trim(),
       sender_email: formData.sender_email.trim().toLowerCase(),
-      campaign_status: formData.schedule_option,
+      // "Send Now" should dispatch after save, not just persist a sent status.
+      campaign_status:
+        formData.schedule_option === "sent"
+          ? "draft"
+          : formData.schedule_option,
       scheduled_date:
         formData.schedule_option === "scheduled"
           ? formData.scheduled_date
@@ -165,10 +183,22 @@ const CreateCampaign = () => {
     };
 
     try {
+      let campaignId = editingCampaign?.campaign_id;
+
       if (editingCampaign?.campaign_id) {
         await api.put(`/campaigns/${editingCampaign.campaign_id}`, payload);
       } else {
-        await api.post("/campaigns", payload);
+        const response = await api.post("/campaigns", payload);
+        campaignId = response.data?.id;
+      }
+
+      if (formData.schedule_option === "sent") {
+        if (!campaignId) {
+          setError("Campaign saved but send failed: missing campaign id");
+          return;
+        }
+
+        await api.post(`/campaigns/${campaignId}/send`);
       }
 
       navigate("/campaigns");

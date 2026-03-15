@@ -308,9 +308,9 @@ function Contact() {
             {canManageContacts && activeTab === "all" && (
               <button
                 onClick={() => navigate("/add-contact")}
-                className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="h-4 w-4" />
                 Add new contact
               </button>
             )}

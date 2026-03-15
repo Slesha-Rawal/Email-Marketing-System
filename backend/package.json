@@ -5,18 +5,22 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js"
+    "start": "nodemon server.js",
+    "db:reset": "node reset-db.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
+    "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "multer": "^2.0.2",
     "mysql": "^2.18.1",
+    "nodemailer": "^6.10.0",
     "nodemon": "^3.1.11"
   }
 }

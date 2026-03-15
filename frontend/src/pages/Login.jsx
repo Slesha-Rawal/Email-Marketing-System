@@ -59,6 +59,14 @@ function Login() {
         .catch((err) => {
           const message = err.response?.data?.message;
 
+          if (!err.response) {
+            setErrors({
+              login:
+                "Unable to reach server. Start backend on port 3001 and try again.",
+            });
+            return;
+          }
+
           if (err.response?.status === 401) {
             setErrors({ login: "Invalid email or password" });
             return;

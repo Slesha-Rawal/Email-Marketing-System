@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mail, Upload, User } from "lucide-react";
+import { Plus, Upload, User, X } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import Header from "../components/Header.jsx";
 import api from "../lib/api.js";
@@ -51,6 +51,14 @@ const AddContact = () => {
     }
   };
 
+  const handleRemoveSelectedFile = () => {
+    setSelectedFile(null);
+    const input = document.getElementById("file-upload");
+    if (input) {
+      input.value = "";
+    }
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       setError("Please select a CSV file first");
@@ -90,13 +98,10 @@ const AddContact = () => {
         <Header />
 
         <main className="p-8 space-y-6">
-          <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
+          <section>
             <h1 className="text-2xl font-semibold text-gray-900">
               Add Contacts
             </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Add one contact manually or import multiple contacts from CSV.
-            </p>
 
             {message && (
               <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -140,7 +145,7 @@ const AddContact = () => {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="name@gmail.com"
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -151,7 +156,7 @@ const AddContact = () => {
                 onClick={handleAddContact}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
               >
-                <Mail className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
                 Add Contact
               </button>
             </div>
@@ -174,18 +179,30 @@ const AddContact = () => {
                 className="hidden"
               />
               <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="mx-auto h-5 w-5 text-gray-500" />
                 <p className="text-sm text-gray-700">
                   Click to select a CSV file
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
                   Required columns: name, email
                 </p>
-                {selectedFile && (
-                  <p className="mt-3 text-sm font-medium text-indigo-700">
-                    Selected: {selectedFile.name}
-                  </p>
-                )}
               </label>
+
+              {selectedFile && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <span className="text-sm font-medium text-indigo-700">
+                    {selectedFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveSelectedFile}
+                    className="inline-flex items-center rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    aria-label="Remove selected file"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end">

@@ -16,7 +16,7 @@ function Header() {
     <header className="bg-white border-b border-gray-200 px-8 py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center">
             <Mail className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -24,7 +24,9 @@ function Header() {
               Email Portal
             </span>
             <span className="text-xs uppercase tracking-wide text-gray-500">
-              {user?.role === "admin" ? "Admin monitor" : "Marketing workspace"}
+              {user?.role === "admin"
+                ? "Admin workspace"
+                : "Marketing workspace"}
             </span>
           </div>
         </div>

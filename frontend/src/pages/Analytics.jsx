@@ -77,12 +77,10 @@ const Analytics = () => {
         <Header />
 
         <main className="p-8 space-y-6">
-          <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
+          <section className="px-1 py-1">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-semibold text-gray-900">
-                  Analytics
-                </h1>
+                <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
                 <p className="mt-1 text-sm text-gray-500">
                   Campaign performance metrics for admin and marketing users.
                 </p>
@@ -104,17 +102,17 @@ const Analytics = () => {
                 />
               </div>
             </div>
-
-            {error && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
           </section>
 
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
+            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 text-center">
+              <div className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
                 <Send className="h-4 w-4" />
               </div>
               <p className="text-sm text-gray-500">Emails Sent</p>
@@ -123,8 +121,8 @@ const Analytics = () => {
               </p>
             </article>
 
-            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
+            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 text-center">
+              <div className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#ECF7EE] text-[#66B35D]">
                 <Eye className="h-4 w-4" />
               </div>
               <p className="text-sm text-gray-500">Opens</p>
@@ -136,8 +134,8 @@ const Analytics = () => {
               </p>
             </article>
 
-            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
+            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 text-center">
+              <div className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#FFEAFC] text-[#B37EB2]">
                 <MousePointer className="h-4 w-4" />
               </div>
               <p className="text-sm text-gray-500">Clicks</p>
@@ -149,8 +147,8 @@ const Analytics = () => {
               </p>
             </article>
 
-            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
+            <article className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 text-center">
+              <div className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#EAF6FB] text-[#5F98D9]">
                 <Users className="h-4 w-4" />
               </div>
               <p className="text-sm text-gray-500">Total Contacts</p>

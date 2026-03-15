@@ -87,40 +87,40 @@ const Campaigns = () => {
         <Header />
 
         <div className="p-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-2xl font-bold">Campaigns</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {canManageCampaigns
-                    ? "Marketing users can create, schedule, and update campaigns."
-                    : "Admins can monitor campaign activity only."}
-                </p>
-              </div>
-              {canManageCampaigns && (
-                <button
-                  onClick={() => navigate("/create-campaign")}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  <Plus size={20} />
-                  Create campaign
-                </button>
-              )}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Campaigns</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {canManageCampaigns
+                  ? "Marketing users can create, schedule, and update campaigns."
+                  : "Admins can monitor campaign activity only."}
+              </p>
             </div>
-
-            {pageError && (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {pageError}
-              </div>
+            {canManageCampaigns && (
+              <button
+                onClick={() => navigate("/create-campaign")}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                <Plus className="h-4 w-4" />
+                Create campaign
+              </button>
             )}
+          </div>
 
-            {pageMessage && (
-              <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                {pageMessage}
-              </div>
-            )}
+          {pageError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {pageError}
+            </div>
+          )}
 
-            <div className="flex items-center gap-4 mb-6">
+          {pageMessage && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {pageMessage}
+            </div>
+          )}
+
+          <div className="mb-6 bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center gap-4">
               <div className="flex-1 relative">
                 <Search
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -145,11 +145,13 @@ const Campaigns = () => {
                 <option value="draft">draft</option>
               </select>
             </div>
+          </div>
 
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200">
+                  <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-4 px-4 font-semibold text-gray-700">
                       Campaign Name
                     </th>
