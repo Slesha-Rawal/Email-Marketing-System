@@ -1,26 +1,28 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Edit2, Trash2, User } from "lucide-react";
+import Pagination from "../Pagination.jsx";
 
 function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
+  const tableRef = useRef(null);
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+      <div className="overflow-hidden bg-white">
+        <table className="w-full" ref={tableRef}>
+          <thead className="bg-gray-100 border-b border-gray-200">
             <tr>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Name
               </th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Email
               </th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Status
               </th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
-                Created
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Added Date
               </th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Actions
               </th>
             </tr>
@@ -33,17 +35,17 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                     <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
                       <User className="w-4 h-4 text-gray-600" />
                     </div>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-sm font-medium text-gray-900">
                       {contact.contact_name}
                     </span>
                   </div>
                 </td>
-                <td className="px-6 py-4 text-gray-600">
+                <td className="px-6 py-4 text-sm text-gray-600">
                   {contact.contact_email}
                 </td>
                 <td className="px-6 py-4">
                   <span
-                    className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                    className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
                       contact.contact_status === "active"
                         ? "bg-indigo-100 text-indigo-700"
                         : contact.contact_status === "unsubscribed"
@@ -54,7 +56,7 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                     {contact.contact_status}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-gray-600">
+                <td className="px-6 py-4 text-sm text-gray-600">
                   {new Date(contact.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4">
@@ -74,13 +76,14 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                       </button>
                     </div>
                   ) : (
-                    <span className="text-sm text-gray-400">View only</span>
+                    <span className="text-xs text-gray-400">View only</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <Pagination tableRef={tableRef} options={[15, 30, 50]} />
       </div>
     </>
   );

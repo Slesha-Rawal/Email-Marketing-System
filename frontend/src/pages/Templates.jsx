@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Edit2, Eye, Mail, Plus, Search, Trash2 } from "lucide-react";
-import Header from "../components/Header.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -71,7 +70,6 @@ const Templates = () => {
       <Sidebar />
 
       <div className="flex-1 ml-64 flex flex-col overflow-hidden">
-        <Header />
 
         <main className="flex-1 overflow-y-auto p-8">
           <div className="flex items-center justify-between mb-6">
@@ -100,7 +98,7 @@ const Templates = () => {
             </div>
           )}
 
-          <div className="mb-6 bg-white rounded-lg shadow-sm p-6">
+          <div className="mb-6 p-0">
             <div className="flex items-center gap-4">
               <div className="flex-1 relative">
                 <Search
@@ -118,7 +116,7 @@ const Templates = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Templates List
@@ -188,6 +186,11 @@ const Templates = () => {
 
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() =>
+                            navigate(
+                              `/templates/${template.template_id}/preview`,
+                            )
+                          }
                           className="p-2 hover:bg-gray-100 rounded-lg transition-colors group"
                           title="Preview"
                         >

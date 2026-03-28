@@ -49,7 +49,14 @@ const authorizeRoles =
       return res.status(401).json({ message: "Authentication required" });
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    const normalizedAllowedRoles = allowedRoles.map((role) =>
+      String(role).trim().toLowerCase(),
+    );
+    const normalizedUserRole = String(req.user.role || "")
+      .trim()
+      .toLowerCase();
+
+    if (!normalizedAllowedRoles.includes(normalizedUserRole)) {
       return res.status(403).json({
         message: "You do not have permission to perform this action",
       });

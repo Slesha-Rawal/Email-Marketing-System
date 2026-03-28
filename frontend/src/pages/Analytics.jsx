@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Eye, MousePointer, Send, Users } from "lucide-react";
-import Header from "../components/Header.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 
@@ -60,13 +59,34 @@ const Analytics = () => {
     });
   }, [campaignAnalytics, endDate, startDate]);
 
+  const summary = useMemo(() => {
+    if (!startDate && !endDate) {
+      return {
+        emailsSent: stats.emailsSent,
+        opens: stats.opens,
+        clicks: stats.clicks,
+        totalContacts: stats.totalContacts,
+      };
+    }
+
+    return filteredCampaigns.reduce(
+      (acc, campaign) => ({
+        ...acc,
+        emailsSent: acc.emailsSent + (campaign.total_sent || 0),
+        opens: acc.opens + (campaign.total_opened || 0),
+        clicks: acc.clicks + (campaign.total_clicked || 0),
+      }),
+      { emailsSent: 0, opens: 0, clicks: 0, totalContacts: stats.totalContacts },
+    );
+  }, [filteredCampaigns, stats, startDate, endDate]);
+
   const openRate =
-    stats.emailsSent > 0
-      ? ((stats.opens / stats.emailsSent) * 100).toFixed(1)
+    summary.emailsSent > 0
+      ? ((summary.opens / summary.emailsSent) * 100).toFixed(1)
       : 0;
   const clickRate =
-    stats.emailsSent > 0
-      ? ((stats.clicks / stats.emailsSent) * 100).toFixed(1)
+    summary.emailsSent > 0
+      ? ((summary.clicks / summary.emailsSent) * 100).toFixed(1)
       : 0;
 
   return (
@@ -74,7 +94,6 @@ const Analytics = () => {
       <Sidebar />
 
       <div className="flex-1 ml-64">
-        <Header />
 
         <main className="p-8 space-y-6">
           <section className="px-1 py-1">
@@ -117,7 +136,7 @@ const Analytics = () => {
               </div>
               <p className="text-sm text-gray-500">Emails Sent</p>
               <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {stats.emailsSent.toLocaleString()}
+                {summary.emailsSent.toLocaleString()}
               </p>
             </article>
 
@@ -127,7 +146,7 @@ const Analytics = () => {
               </div>
               <p className="text-sm text-gray-500">Opens</p>
               <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {stats.opens.toLocaleString()}
+                {summary.opens.toLocaleString()}
               </p>
               <p className="mt-1 text-xs text-gray-500">
                 Open rate: {openRate}%
@@ -140,7 +159,7 @@ const Analytics = () => {
               </div>
               <p className="text-sm text-gray-500">Clicks</p>
               <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {stats.clicks.toLocaleString()}
+                {summary.clicks.toLocaleString()}
               </p>
               <p className="mt-1 text-xs text-gray-500">
                 Click rate: {clickRate}%
@@ -153,12 +172,12 @@ const Analytics = () => {
               </div>
               <p className="text-sm text-gray-500">Total Contacts</p>
               <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {stats.totalContacts.toLocaleString()}
+                {summary.totalContacts.toLocaleString()}
               </p>
             </article>
           </section>
 
-          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <section className="bg-white overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Campaign Performance
@@ -168,7 +187,7 @@ const Analytics = () => {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
+                  <tr className="border-b border-gray-200 bg-gray-100">
                     <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
                       Campaign
                     </th>

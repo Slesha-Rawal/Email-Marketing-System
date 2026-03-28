@@ -62,7 +62,56 @@
   margin: 0.75rem 0;
 }
 
+.tiptap img[data-image-align="left"] {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.tiptap img[data-image-align="center"] {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tiptap img[data-image-align="right"] {
+  margin-left: auto;
+  margin-right: 0;
+}
+
 .tiptap a:not([data-cta-button="true"]) {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Button node styles in editor */
+.tiptap [data-type="button-container"] {
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.tiptap .ProseMirror-selectednode [data-type="button-container"] {
+  outline: 2px solid #6b6ce0;
+  outline-offset: 4px;
+  background-color: rgba(107, 108, 224, 0.05);
+}
+
+.tiptap [data-type="button"] {
+  pointer-events: none; /* Disable actual clicking in editor to allow selection */
+}
+
+/* Custom Scrollbar Styles */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
 }

@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   user_role ENUM('admin', 'marketing') NOT NULL,
   user_status ENUM('active', 'inactive') DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_login_at TIMESTAMP NULL DEFAULT NULL
 );
 
 -- Contacts table for mailing list management

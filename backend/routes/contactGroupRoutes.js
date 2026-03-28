@@ -32,6 +32,12 @@ router.delete(
   authorizeRoles("marketing"),
   contactGroupController.removeContactFromGroup,
 );
+router.put(
+  "/contact-groups/:groupId",
+  authenticate,
+  authorizeRoles("marketing"),
+  contactGroupController.updateContactGroup,
+);
 router.delete(
   "/contact-groups/:groupId",
   authenticate,

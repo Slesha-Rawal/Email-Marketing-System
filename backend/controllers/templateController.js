@@ -33,6 +33,49 @@ const getAllTemplates = async (req, res) => {
   }
 };
 
+const uploadTemplateImage = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "Image file is required" });
+  }
+
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const normalizedPath = String(req.file.path).replaceAll("\\", "/");
+
+  return res.status(201).json({
+    message: "Image uploaded successfully",
+    url: `${baseUrl}/${normalizedPath}`,
+  });
+};
+
+const getTemplateById = async (req, res) => {
+  const templateId = Number.parseInt(req.params.id, 10);
+
+  if (!templateId || Number.isNaN(templateId)) {
+    return res.status(400).json({ message: "Invalid template id" });
+  }
+
+  try {
+    const rows = await queryDb(
+      `SELECT t.template_id, t.template_name, t.template_subject, t.template_body,
+              t.created_at, t.updated_at, u.user_name AS created_by_name
+       FROM templates t
+       LEFT JOIN users u ON u.user_id = t.created_by
+       WHERE t.template_id = ?
+       LIMIT 1`,
+      [templateId],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+
+    return res.status(200).json(rows[0]);
+  } catch (error) {
+    console.error("Error fetching template by id:", error);
+    return res.status(500).json({ message: "Failed to fetch template" });
+  }
+};
+
 const createTemplate = async (req, res) => {
   const template = {
     template_name: req.body.template_name?.trim(),
@@ -124,6 +167,8 @@ const deleteTemplate = async (req, res) => {
 
 export default {
   getAllTemplates,
+  uploadTemplateImage,
+  getTemplateById,
   createTemplate,
   updateTemplate,
   deleteTemplate,

@@ -10,10 +10,16 @@ api.interceptors.request.use((config) => {
     const storedValue = localStorage.getItem(AUTH_STORAGE_KEY);
 
     if (storedValue) {
-      const { user } = JSON.parse(storedValue);
+      const storedAuth = JSON.parse(storedValue);
+      const user = storedAuth?.user ?? null;
+      const userId = user?.userId ?? storedAuth?.userId;
+      const token = storedAuth?.token ?? user?.token;
 
-      if (user?.userId) {
-        config.headers["x-user-id"] = String(user.userId);
+      if (userId) {
+        config.headers["x-user-id"] = String(userId);
+      }
+      if (token) {
+        config.headers["Authorization"] = `Bearer ${token}`;
       }
     }
   } catch (error) {

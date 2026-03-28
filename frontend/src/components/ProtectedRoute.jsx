@@ -10,16 +10,11 @@ function ProtectedRoute({ allowedRoles }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user?.role)) {
-    return (
-      <Navigate
-        to={user?.role === "admin" ? "/analytics" : "/contact"}
-        replace
-      />
-    );
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;

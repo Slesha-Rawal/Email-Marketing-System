@@ -1,7 +1,11 @@
-import db from "../config/dbConnect.js";
 import fs from "fs";
-import csv from "csv-parser";
+import { promises as dnsPromises } from "dns";
 import { queryDb } from "../utils/db.js";
+import { processEmailCsv } from "../utils/emailCsvProcessor.js";
+import {
+  isDisposableDomain,
+  loadDisposableDomainsFromFile,
+} from "../utils/disposableDomainService.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_STATUSES = new Set(["active", "unsubscribed", "bounced"]);
@@ -32,19 +36,65 @@ const validateContactPayload = ({ contact_name, contact_email }) => {
   return null;
 };
 
-const mapColumnName = (column) => {
-  const columnMap = {
-    name: "contact_name",
-    "full name": "contact_name",
-    "contact name": "contact_name",
-    email: "contact_email",
-    "email address": "contact_email",
-    "e-mail": "contact_email",
-    status: "contact_status",
-  };
+const normalizeMxExchange = (exchange) =>
+  String(exchange || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "");
 
-  const normalized = column.toLowerCase().trim();
-  return columnMap[normalized] || column;
+const getMxValidationError = (domain, records) => {
+  if (!records || records.length === 0) {
+    return "Domain has no MX records";
+  }
+
+  const normalizedDomain = String(domain)
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "");
+  const exchanges = records.map((record) =>
+    normalizeMxExchange(record.exchange),
+  );
+
+  const hasNullMx = exchanges.some(
+    (exchange) => exchange === "" || exchange === ".",
+  );
+  if (hasNullMx) {
+    return "Null MX record (domain does not accept email)";
+  }
+
+  const hasNonSelfMx = exchanges.some(
+    (exchange) => exchange !== normalizedDomain,
+  );
+  if (!hasNonSelfMx) {
+    return "MX records are self-pointing only";
+  }
+
+  return null;
+};
+
+const verifyEmailDomainRules = async (email) => {
+  const domain = email.split("@")[1];
+  if (!domain) {
+    return "Invalid email format";
+  }
+
+  await loadDisposableDomainsFromFile();
+
+  if (isDisposableDomain(domain)) {
+    return "Disposable email domain";
+  }
+
+  try {
+    const records = await dnsPromises.resolveMx(domain);
+    const mxValidationError = getMxValidationError(domain, records);
+    if (mxValidationError) {
+      return mxValidationError;
+    }
+  } catch {
+    return "MX lookup failed";
+  }
+
+  return null;
 };
 
 const getAllContacts = async (req, res) => {
@@ -66,10 +116,20 @@ const getAllContacts = async (req, res) => {
 
 const addContact = async (req, res) => {
   const payload = normalizeContactPayload(req.body);
+  const verify = parseVerifyFlag(req.body?.verify);
   const validationMessage = validateContactPayload(payload);
 
   if (validationMessage) {
     return res.status(400).json({ error: validationMessage });
+  }
+
+  if (verify) {
+    const verificationError = await verifyEmailDomainRules(
+      payload.contact_email,
+    );
+    if (verificationError) {
+      return res.status(400).json({ error: verificationError });
+    }
   }
 
   try {
@@ -151,71 +211,162 @@ const deleteContact = async (req, res) => {
   }
 };
 
-const uploadCSV = (req, res) => {
+const toDisplayNameFromEmail = (email) => {
+  const localPart = email.split("@")[0] || "subscriber";
+  return localPart
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 255);
+};
+
+const parseVerifyFlag = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+
+    return false;
+  }
+
+  return false;
+};
+
+const chunkArray = (items, size) => {
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+};
+
+const findExistingContactEmails = async (emails, batchSize = 500) => {
+  if (!emails.length) {
+    return new Set();
+  }
+
+  const existingEmailSet = new Set();
+  const batches = chunkArray(emails, batchSize);
+
+  for (const batch of batches) {
+    const placeholders = batch.map(() => "?").join(", ");
+    const rows = await queryDb(
+      `SELECT contact_email FROM contacts WHERE contact_email IN (${placeholders})`,
+      batch,
+    );
+
+    rows.forEach((row) => {
+      existingEmailSet.add(String(row.contact_email).toLowerCase());
+    });
+  }
+
+  return existingEmailSet;
+};
+
+const uploadCSV = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file uploaded" });
   }
 
-  const results = [];
   const filePath = req.file.path;
+  const verify = parseVerifyFlag(req.body?.verify);
+  const requestedGroupId = req.body?.groupId;
+  const newGroupName = req.body?.newGroupName?.trim();
 
-  fs.createReadStream(filePath)
-    .pipe(csv())
-    .on("data", (data) => {
-      const mappedData = {};
-      Object.keys(data).forEach((key) => {
-        const mappedKey = mapColumnName(key);
-        mappedData[mappedKey] = data[key];
-      });
+  try {
+    const { validEmails, validRows, rejectedEmails } = await processEmailCsv({
+      filePath,
+      verify,
+      emailColumn: "email",
+      mxBatchSize: 25,
+    });
 
-      const payload = normalizeContactPayload(mappedData);
-      if (payload.contact_name && payload.contact_email) {
-        results.push({
-          contact_name: payload.contact_name,
-          contact_email: payload.contact_email,
-          contact_status: payload.contact_status,
-        });
+    const existingEmailSet = await findExistingContactEmails(validEmails);
+    const rowsToInsert = [];
+
+    validRows.forEach((row) => {
+      if (!existingEmailSet.has(row.contact_email)) {
+        rowsToInsert.push(row);
       }
-    })
-    .on("end", () => {
-      fs.unlinkSync(filePath);
+    });
 
-      if (results.length === 0) {
-        return res.status(400).json({
-          message:
-            "No valid contacts found in CSV. Make sure the file has Name and Email columns.",
-        });
-      }
-
-      const query =
-        "INSERT IGNORE INTO contacts (contact_name, contact_email, contact_status, created_by) VALUES ?";
-      const values = results.map((contact) => [
-        contact.contact_name,
-        contact.contact_email,
-        contact.contact_status,
+    // 1. Insert NEW contacts into contacts table
+    if (rowsToInsert.length > 0) {
+      const values = rowsToInsert.map((row) => [
+        row.contact_name || toDisplayNameFromEmail(row.contact_email),
+        row.contact_email,
+        "active",
         req.user.userId,
       ]);
 
-      db.query(query, [values], (err, result) => {
-        if (err) {
-          console.error("Error inserting contacts:", err);
-          return res.status(500).json({ message: "Error uploading contacts" });
-        }
+      await queryDb(
+        "INSERT IGNORE INTO contacts (contact_name, contact_email, contact_status, created_by) VALUES ?",
+        [values],
+      );
+    }
 
-        return res.json({
-          message: `Imported ${result.affectedRows} contacts successfully`,
-          count: result.affectedRows,
-          skipped: results.length - result.affectedRows,
-        });
-      });
-    })
-    .on("error", (err) => {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    // 2. Resolve Group ID
+    let finalGroupId = requestedGroupId;
+    if (newGroupName) {
+      const groupResult = await queryDb(
+        "INSERT INTO contact_groups (group_name, created_by) VALUES (?, ?) ON DUPLICATE KEY UPDATE group_id=LAST_INSERT_ID(group_id)",
+        [newGroupName, req.user.userId],
+      );
+      finalGroupId = groupResult.insertId;
+    }
+
+    // 3. Assign ALL valid contacts from CSV to the group
+    if (finalGroupId && validEmails.length > 0) {
+      const contactRows = await queryDb(
+        "SELECT contact_id FROM contacts WHERE contact_email IN (?)",
+        [validEmails],
+      );
+
+      if (contactRows.length > 0) {
+        const groupValues = contactRows.map((row) => [
+          finalGroupId,
+          row.contact_id,
+          req.user.userId,
+        ]);
+
+        await queryDb(
+          "INSERT IGNORE INTO contact_group_members (group_id, contact_id, added_by) VALUES ?",
+          [groupValues],
+        );
       }
-      console.error("Error parsing CSV:", err);
-      return res.status(500).json({ message: "Error parsing CSV file" });
+    }
+
+    return res.json({
+      message: `Processed ${validEmails.length} contacts successfully`,
+      verify,
+      newlyAdded: rowsToInsert.length,
+      groupId: finalGroupId,
+      validEmails: validEmails,
+      rejectedEmails,
     });
+  } catch (err) {
+    console.error("Error parsing CSV:", err);
+    return res.status(500).json({ message: "Error parsing CSV file" });
+  } finally {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
 };
 
 export default {

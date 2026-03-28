@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import Header from "../components/Header.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import RichTextEditor from "../components/RichTextEditor.jsx";
@@ -214,7 +213,6 @@ const CreateCampaign = () => {
       <Sidebar />
 
       <div className="flex-1 ml-64">
-        <Header />
 
         <div className="p-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 max-w-4xl">

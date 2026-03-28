@@ -77,6 +77,26 @@ const getRecipientContacts = async (contactSegment) => {
     );
   }
 
+  if (contactSegment.startsWith("ids:")) {
+    const contactIds = contactSegment
+      .replace("ids:", "")
+      .split(",")
+      .map((id) => Number.parseInt(id.trim(), 10))
+      .filter((id) => !Number.isNaN(id));
+
+    if (contactIds.length === 0) {
+      return [];
+    }
+
+    return queryDb(
+      `SELECT contact_id, contact_name, contact_email
+       FROM contacts
+       WHERE contact_id IN (?) AND contact_status = 'active'
+       ORDER BY FIELD(contact_id, ?)`,
+      [contactIds, contactIds],
+    );
+  }
+
   return [];
 };
 
@@ -232,53 +252,77 @@ const normalizeEmailBodyHtml = (body = "") => {
   return raw;
 };
 
+const ensureUnsubscribeFooter = (html = "", unsubscribeUrl = "") => {
+  const body = String(html || "");
+  const trimmedBody = body.trim();
+  const safeUnsubscribeUrl = sanitizeAttribute(unsubscribeUrl || "#");
+
+  // Keep existing unsubscribe sections if template already includes one.
+  if (
+    /(\{\{\s*unsubscribe_url\s*\}\}|\/unsubscribe\b|>\s*unsubscribe\s*<)/i.test(
+      body,
+    )
+  ) {
+    return body;
+  }
+
+  const footerMarkup = `
+    <p style="margin:24px 0 0 0;text-align:center;font-size:12px;line-height:1.6;color:#6b7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      You are receiving these emails because you are subscribed to our email updates.<br/>
+      <a href="${safeUnsubscribeUrl}" style="color:#4f46e5;text-decoration:underline;">Unsubscribe</a>
+    </p>
+  `;
+
+  return `${trimmedBody}${footerMarkup}`;
+};
+
 const toEmailHtmlDocument = (bodyHtml, subject, trackingPixelUrl = "") => {
   let styledBody = normalizeEmailBodyHtml(bodyHtml);
 
   styledBody = addInlineStyleToTag(
     styledBody,
     "p",
-    "margin:0 0 12px 0;line-height:1.65;font-size:15px;color:#111827;",
+    "margin:0 0 16px 0;line-height:1.6;font-size:16px;color:#374151;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "h1",
-    "margin:0 0 12px 0;line-height:1.25;font-size:26px;color:#111827;",
+    "margin:0 0 16px 0;line-height:1.2;font-size:28px;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "h2",
-    "margin:0 0 12px 0;line-height:1.3;font-size:21px;color:#111827;",
+    "margin:0 0 16px 0;line-height:1.3;font-size:22px;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "ul",
-    "margin:0 0 12px 0;padding-left:22px;color:#111827;",
+    "margin:0 0 16px 0;padding-left:24px;color:#374151;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "ol",
-    "margin:0 0 12px 0;padding-left:22px;color:#111827;",
+    "margin:0 0 16px 0;padding-left:24px;color:#374151;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "li",
-    "margin:0 0 8px 0;line-height:1.6;font-size:15px;color:#111827;",
+    "margin:0 0 8px 0;line-height:1.6;font-size:16px;color:#374151;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "blockquote",
-    "margin:0 0 12px 0;padding-left:12px;border-left:3px solid #d1d5db;color:#4b5563;",
+    "margin:0 0 16px 0;padding-left:20px;border-left:4px solid #e5e7eb;color:#6b7280;font-style:italic;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "a",
-    "color:#1d4ed8;text-decoration:underline;",
+    "color:#4f46e5;text-decoration:underline;",
   );
   styledBody = addInlineStyleToTag(
     styledBody,
     "img",
-    "display:block;max-width:100%;height:auto;border:0;",
+    "display:block;max-width:100%;height:auto;border-radius:8px;margin:20px auto;",
   );
 
   const safeSubject = sanitizeAttribute(subject || "Campaign update");
@@ -288,30 +332,43 @@ const toEmailHtmlDocument = (bodyHtml, subject, trackingPixelUrl = "") => {
 
   return `
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${safeSubject}</title>
+    <!--[if mso]>
+    <noscript>
+      <xml>
+        <o:OfficeDocumentSettings>
+          <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+      </xml>
+    </noscript>
+    <![endif]-->
   </head>
-  <body style="margin:0;padding:24px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+  <body style="margin:0;padding:40px 10px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;">
       <tr>
-        <td align="center" style="padding:0;">
-          <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+        <td align="center">
+          <!--[if mso]>
+          <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0">
             <tr>
-              <td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;background:#f9fafb;">
-                <p style="margin:0;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;">Subject</p>
-                <p style="margin:8px 0 0 0;font-size:18px;line-height:1.35;font-weight:600;color:#111827;">${safeSubject}</p>
-              </td>
-            </tr>
+              <td>
+          <![endif]-->
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;border-collapse:separate;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1);">
             <tr>
-              <td style="padding:24px;">
+              <td style="padding:40px 48px;">
                 ${styledBody}
                 ${openPixelMarkup}
               </td>
             </tr>
           </table>
+          <!--[if mso]>
+              </td>
+            </tr>
+          </table>
+          <![endif]-->
         </td>
       </tr>
     </table>
@@ -418,17 +475,20 @@ const executeCampaignSend = async (campaignId) => {
 
     for (const contact of recipients) {
       const trackingId = trackingIdByContactId.get(contact.contact_id);
+      const unsubscribeUrl = `${trackingBaseUrl}/unsubscribe?email=${encodeURIComponent(contact.contact_email)}&campaign=${encodeURIComponent(campaignId)}`;
       const personalizedBody = (campaign.campaign_body || "")
         .replaceAll("{{name}}", contact.contact_name || "Subscriber")
-        .replaceAll("{{email}}", contact.contact_email);
+        .replaceAll("{{email}}", contact.contact_email)
+        .replaceAll("{{unsubscribe_url}}", unsubscribeUrl);
       const trackedBody = rewriteLinksForTracking(
         personalizedBody,
         trackingId,
         trackingBaseUrl,
       );
+      const finalBody = ensureUnsubscribeFooter(trackedBody, unsubscribeUrl);
       const trackingPixelUrl = `${trackingBaseUrl}/api/campaigns/track/open/${encodeURIComponent(trackingId)}`;
       const htmlBody = toEmailHtmlDocument(
-        trackedBody,
+        finalBody,
         campaign.campaign_subject,
         trackingPixelUrl,
       );
@@ -441,8 +501,8 @@ const executeCampaignSend = async (campaignId) => {
             campaign.reply_to_email || campaign.sender_email || undefined,
           subject: campaign.campaign_subject,
           html: htmlBody,
-          text: trackedBody
-            ? stripHtml(trackedBody)
+          text: finalBody
+            ? stripHtml(finalBody)
             : "This is your campaign update.",
         });
 
@@ -522,6 +582,79 @@ const getAllCampaigns = async (req, res) => {
   } catch (error) {
     console.error("Error fetching campaigns:", error);
     return res.status(500).json({ message: "Failed to fetch campaigns" });
+  }
+};
+
+const getEmailLogs = async (req, res) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const templateId = Number.parseInt(req.query.template, 10);
+    const recipient = String(req.query.recipient || "").trim();
+    const date = String(req.query.date || "").trim();
+
+    const whereClauses = ["c.campaign_status = 'sent'"];
+    const queryParams = [];
+
+    if (search) {
+      whereClauses.push("(c.campaign_subject LIKE ? OR c.sender_name LIKE ?)");
+      queryParams.push(`%${search}%`, `%${search}%`);
+    }
+
+    if (!Number.isNaN(templateId) && templateId > 0) {
+      whereClauses.push("c.template_id = ?");
+      queryParams.push(templateId);
+    }
+
+    if (recipient) {
+      whereClauses.push(
+        `EXISTS (
+           SELECT 1
+           FROM campaign_emails ce_filter
+           INNER JOIN contacts ct_filter
+             ON ct_filter.contact_id = ce_filter.contact_id
+           WHERE ce_filter.campaign_id = c.campaign_id
+             AND ct_filter.contact_email LIKE ?
+         )`,
+      );
+      queryParams.push(`%${recipient}%`);
+    }
+
+    if (date) {
+      whereClauses.push("DATE(COALESCE(c.sent_date, c.updated_at)) = ?");
+      queryParams.push(date);
+    }
+
+    const rows = await queryDb(
+      `SELECT
+         c.campaign_id AS id,
+         COALESCE(c.sent_date, c.updated_at) AS sent_at,
+         t.template_name,
+         u.user_name AS sent_by,
+         c.campaign_status AS status,
+         COALESCE(c.total_recipients, COUNT(ce.campaign_email_id)) AS total_recipients,
+         COALESCE(SUM(CASE WHEN ce.email_status IN ('sent', 'delivered', 'opened', 'clicked') THEN 1 ELSE 0 END), 0) AS success_count,
+         COALESCE(SUM(CASE WHEN ce.email_status IN ('failed', 'bounced') THEN 1 ELSE 0 END), 0) AS fail_count
+       FROM campaigns c
+       LEFT JOIN templates t ON t.template_id = c.template_id
+       LEFT JOIN users u ON u.user_id = c.created_by
+       LEFT JOIN campaign_emails ce ON ce.campaign_id = c.campaign_id
+       WHERE ${whereClauses.join(" AND ")}
+       GROUP BY
+         c.campaign_id,
+         c.sent_date,
+         c.updated_at,
+         t.template_name,
+         u.user_name,
+         c.campaign_status,
+         c.total_recipients
+       ORDER BY COALESCE(c.sent_date, c.updated_at) DESC`,
+      queryParams,
+    );
+
+    return res.status(200).json(rows);
+  } catch (error) {
+    console.error("Error fetching email logs:", error);
+    return res.status(500).json({ message: "Failed to fetch email logs" });
   }
 };
 
@@ -869,6 +1002,7 @@ export { startCampaignScheduler };
 
 export default {
   getAllCampaigns,
+  getEmailLogs,
   createCampaign,
   updateCampaign,
   deleteCampaign,

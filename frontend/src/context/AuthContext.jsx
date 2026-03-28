@@ -32,6 +32,7 @@ function AuthProvider({ children }) {
         const response = await api.get("/auth/me");
         const nextState = {
           user: response.data.user,
+          token: authState.token ?? authState.user?.token ?? null,
         };
         setAuthState(nextState);
         persistAuth(nextState);
@@ -46,8 +47,10 @@ function AuthProvider({ children }) {
     bootstrap();
   }, []);
 
-  const login = (user) => {
-    const nextState = { user };
+  const login = (payload) => {
+    const user = payload?.user ?? payload;
+    const token = payload?.token ?? user?.token ?? null;
+    const nextState = { user, token };
     setAuthState(nextState);
     persistAuth(nextState);
   };
@@ -61,6 +64,7 @@ function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         ...authState,
+        token: authState.token ?? authState.user?.token ?? null,
         isAuthenticated: Boolean(authState.user?.userId),
         isBootstrapping,
         login,

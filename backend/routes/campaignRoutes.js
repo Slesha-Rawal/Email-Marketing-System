@@ -8,6 +8,12 @@ router.get("/campaigns/track/open/:trackingId", campaignController.trackOpen);
 router.get("/campaigns/track/click/:trackingId", campaignController.trackClick);
 
 router.get("/campaigns", authenticate, campaignController.getAllCampaigns);
+router.get(
+  "/email-logs",
+  authenticate,
+  authorizeRoles("marketing", "admin"),
+  campaignController.getEmailLogs,
+);
 router.post(
   "/campaigns",
   authenticate,

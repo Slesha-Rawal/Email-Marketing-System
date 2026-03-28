@@ -53,8 +53,8 @@ function Login() {
           password: values.password,
         })
         .then((res) => {
-          login(res.data.user);
-          navigate(res.data.user.role === "admin" ? "/analytics" : "/contact");
+          login(res.data);
+          navigate("/");
         })
         .catch((err) => {
           const message = err.response?.data?.message;

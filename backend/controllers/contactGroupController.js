@@ -226,6 +226,42 @@ const removeContactFromGroup = async (req, res) => {
   }
 };
 
+const updateContactGroup = async (req, res) => {
+  const groupId = Number.parseInt(req.params.groupId, 10);
+  const groupName = req.body.group_name?.trim();
+
+  if (!groupId || Number.isNaN(groupId)) {
+    return res.status(400).json({ error: "Invalid group id" });
+  }
+
+  if (!groupName) {
+    return res.status(400).json({ error: "Group name is required" });
+  }
+
+  try {
+    await ensureGroupTables();
+
+    const result = await queryDb(
+      "UPDATE contact_groups SET group_name = ? WHERE group_id = ?",
+      [groupName, groupId],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    return res.json({ message: "Group renamed successfully" });
+  } catch (error) {
+    console.error("Error updating contact group:", error);
+
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Group name already exists" });
+    }
+
+    return res.status(500).json({ error: "Failed to rename contact group" });
+  }
+};
+
 const deleteContactGroup = async (req, res) => {
   const groupId = Number.parseInt(req.params.groupId, 10);
 
@@ -258,5 +294,6 @@ export default {
   getGroupContacts,
   addContactsToGroup,
   removeContactFromGroup,
+  updateContactGroup,
   deleteContactGroup,
 };

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { Node, mergeAttributes } from "@tiptap/core";
+import React, { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { Node, mergeAttributes } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
@@ -19,157 +19,116 @@ import {
   Link2,
   List,
   ListOrdered,
-  MousePointerClick,
-  Paintbrush,
+  MousePointer2,
+  RectangleHorizontal,
   Redo2,
+  Trash2,
   Undo2,
 } from "lucide-react";
+import api from "../lib/api.js";
 
-const ToolbarButton = ({ onClick, isActive = false, title, children }) => (
+const ToolbarButton = ({
+  onClick,
+  isActive = false,
+  title,
+  children,
+  disabled = false,
+}) => (
   <button
     type="button"
     onClick={onClick}
     title={title}
+    disabled={disabled}
     className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-700 transition-colors ${
-      isActive ? "bg-gray-900 text-white" : "hover:bg-gray-100"
+      disabled
+        ? "cursor-not-allowed text-gray-300"
+        : isActive
+          ? "bg-gray-900 text-white"
+          : "hover:bg-gray-100"
     }`}
   >
     {children}
   </button>
 );
 
-const CtaButton = Node.create({
-  name: "ctaButton",
+const ResizableImage = ImageResize.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      imageAlign: {
+        default: "center",
+        parseHTML: (element) =>
+          element.getAttribute("data-image-align") || "center",
+        renderHTML: (attributes) => ({
+          "data-image-align": attributes.imageAlign || "center",
+        }),
+      },
+    };
+  },
+});
+
+const ButtonNode = Node.create({
+  name: "buttonNode",
   group: "block",
   atom: true,
+  draggable: true,
   selectable: true,
 
   addAttributes() {
     return {
       text: {
-        default: "Verify Email",
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          return link?.textContent || "Verify Email";
-        },
+        default: "Learn More",
       },
       href: {
-        default: "https://example.com/verify",
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          return link?.getAttribute("href") || "https://example.com/verify";
-        },
+        default: "https://",
       },
-      bgColor: {
-        default: "#111827",
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          return link?.getAttribute("data-bg-color") || "#111827";
-        },
+      backgroundColor: {
+        default: "#6366f1", // indigo-600
       },
       textColor: {
         default: "#ffffff",
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          return link?.getAttribute("data-text-color") || "#ffffff";
-        },
       },
-      align: {
+      textAlign: {
         default: "center",
-        parseHTML: (element) => element.getAttribute("data-align") || "center",
-      },
-      radius: {
-        default: 8,
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          const value = Number(link?.getAttribute("data-radius") || 8);
-          return Number.isNaN(value) ? 8 : value;
-        },
-      },
-      fontSize: {
-        default: 14,
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          const value = Number(link?.getAttribute("data-font-size") || 14);
-          return Number.isNaN(value) ? 14 : value;
-        },
-      },
-      width: {
-        default: 0,
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          const value = Number(link?.getAttribute("data-width") || 0);
-          return Number.isNaN(value) ? 0 : value;
-        },
-      },
-      paddingX: {
-        default: 18,
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          const value = Number(link?.getAttribute("data-padding-x") || 18);
-          return Number.isNaN(value) ? 18 : value;
-        },
-      },
-      paddingY: {
-        default: 12,
-        parseHTML: (element) => {
-          const link = element.querySelector("a[data-cta-button]");
-          const value = Number(link?.getAttribute("data-padding-y") || 12);
-          return Number.isNaN(value) ? 12 : value;
-        },
       },
     };
   },
 
   parseHTML() {
-    return [{ tag: "p[data-cta-wrapper='true']" }];
+    return [
+      {
+        tag: 'div[data-type="button-container"]',
+        getAttrs: (element) => {
+          const anchor = element.querySelector("a");
+          return {
+            text: anchor?.textContent || "Learn More",
+            href: anchor?.getAttribute("href") || "https://",
+            backgroundColor: anchor?.style.backgroundColor || "#6366f1",
+            textColor: anchor?.style.color || "#ffffff",
+            textAlign: element.style.textAlign || "center",
+          };
+        },
+      },
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    const {
-      text,
-      href,
-      bgColor,
-      textColor,
-      align,
-      radius,
-      fontSize,
-      width,
-      paddingX,
-      paddingY,
-    } = HTMLAttributes;
-
-    const marginStyle =
-      align === "left"
-        ? "16px auto 16px 0"
-        : align === "right"
-          ? "16px 0 16px auto"
-          : "16px auto";
-
-    const widthStyle = Number(width) > 0 ? `width:${Number(width)}px;` : "";
-
+    const { textAlign, backgroundColor, textColor, text, href } =
+      HTMLAttributes;
     return [
-      "p",
-      mergeAttributes({
-        "data-cta-wrapper": "true",
-        "data-align": align,
-        style: `margin: 0; text-align: ${align};`,
-      }),
+      "div",
+      {
+        "data-type": "button-container",
+        style: `text-align: ${textAlign}; margin: 20px 0;`,
+      },
       [
         "a",
         {
           href,
+          "data-type": "button",
           target: "_blank",
           rel: "noopener noreferrer",
-          "data-cta-button": "true",
-          "data-bg-color": bgColor,
-          "data-text-color": textColor,
-          "data-radius": radius,
-          "data-font-size": fontSize,
-          "data-width": width,
-          "data-padding-x": paddingX,
-          "data-padding-y": paddingY,
-          style: `display:inline-block; ${widthStyle} background:${bgColor}; color:${textColor}; text-decoration:none; text-align:center; font-size:${fontSize}px; font-weight:600; line-height:1.2; padding:${paddingY}px ${paddingX}px; border-radius:${radius}px; margin:${marginStyle}; box-sizing:border-box;`,
+          style: `background-color: ${backgroundColor}; color: ${textColor}; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; font-family: sans-serif; cursor: pointer; border: none;`,
         },
         text,
       ],
@@ -178,32 +137,41 @@ const CtaButton = Node.create({
 
   addCommands() {
     return {
-      insertCtaButton:
-        (attrs) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs }),
-      updateCtaButton:
-        (attrs) =>
-        ({ commands }) =>
-          commands.updateAttributes(this.name, attrs),
+      setButton:
+        (options) =>
+        ({ chain }) => {
+          return chain()
+            .insertContent({
+              type: this.name,
+              attrs: options || {},
+            })
+            .run();
+        },
+      updateButton:
+        (options) =>
+        ({ chain }) => {
+          return chain().updateAttributes(this.name, options).run();
+        },
     };
   },
 });
 
 const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
-  const [hasSelectedCta, setHasSelectedCta] = useState(false);
+  const [hasSelectedImage, setHasSelectedImage] = useState(false);
+  const [imageAlign, setImageAlign] = useState("center");
+  const [hasSelectedButton, setHasSelectedButton] = useState(false);
+  const [buttonProps, setButtonProps] = useState({
+    text: "Learn More",
+    href: "https://",
+    backgroundColor: "#6366f1",
+    textColor: "#ffffff",
+    textAlign: "center",
+  });
   const [textColor, setTextColor] = useState("#111827");
-
-  const [ctaText, setCtaText] = useState("Verify Email");
-  const [ctaUrl, setCtaUrl] = useState("https://example.com/verify");
-  const [ctaBgColor, setCtaBgColor] = useState("#111827");
-  const [ctaTextColor, setCtaTextColor] = useState("#ffffff");
-  const [ctaAlign, setCtaAlign] = useState("center");
-  const [ctaRadius, setCtaRadius] = useState(8);
-  const [ctaFontSize, setCtaFontSize] = useState(14);
-  const [ctaWidth, setCtaWidth] = useState(0);
-  const [ctaPaddingX, setCtaPaddingX] = useState(18);
-  const [ctaPaddingY, setCtaPaddingY] = useState(12);
+  const imageInputRef = useRef(null);
+  const textColorInputRef = useRef(null);
+  const btnBgColorInputRef = useRef(null);
+  const btnTextColorInputRef = useRef(null);
 
   const editor = useEditor({
     extensions: [
@@ -220,20 +188,44 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
         },
       }),
       TextAlign.configure({
-        types: ["heading", "paragraph"],
+        types: ["heading", "paragraph", "buttonNode"],
       }),
-      ImageResize.configure({
+      ResizableImage.configure({
         inline: false,
         minWidth: 80,
         maxWidth: 900,
       }),
-      CtaButton,
+      ButtonNode,
     ],
     content: value || "",
     editorProps: {
       attributes: {
         class:
-          "tiptap prose prose-sm max-w-none min-h-40 px-4 py-3 focus:outline-none",
+          "tiptap prose prose-sm max-w-[600px] mx-auto min-h-40 px-4 py-3 focus:outline-none",
+      },
+      handleKeyDown: (view, event) => {
+        if (!view.hasFocus()) {
+          return false;
+        }
+
+        if (event.key !== "Backspace" && event.key !== "Delete") {
+          return false;
+        }
+
+        const { state } = view;
+        const { selection } = state;
+        const selectedNode = selection?.node;
+
+        if (
+          selectedNode?.type?.name === "image" ||
+          selectedNode?.type?.name === "buttonNode"
+        ) {
+          event.preventDefault();
+          view.dispatch(state.tr.deleteSelection());
+          return true;
+        }
+
+        return false;
       },
     },
     onUpdate: ({ editor: instance }) => {
@@ -259,26 +251,31 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
     }
 
     const syncControls = () => {
-      const ctaSelected = editor.isActive("ctaButton");
-      setHasSelectedCta(ctaSelected);
+      const imageSelected = editor.isActive("image");
+      setHasSelectedImage(imageSelected);
 
-      if (ctaSelected) {
-        const attrs = editor.getAttributes("ctaButton");
-        setCtaText(attrs.text || "Verify Email");
-        setCtaUrl(attrs.href || "https://example.com/verify");
-        setCtaBgColor(attrs.bgColor || "#111827");
-        setCtaTextColor(attrs.textColor || "#ffffff");
-        setCtaAlign(attrs.align || "center");
-        setCtaRadius(Number(attrs.radius || 8));
-        setCtaFontSize(Number(attrs.fontSize || 14));
-        setCtaWidth(Number(attrs.width || 0));
-        setCtaPaddingX(Number(attrs.paddingX || 18));
-        setCtaPaddingY(Number(attrs.paddingY || 12));
+      if (imageSelected) {
+        const imageAttrs = editor.getAttributes("image");
+        setImageAlign(imageAttrs.imageAlign || "center");
       }
 
       const currentColor = editor.getAttributes("textStyle").color;
       if (currentColor) {
         setTextColor(currentColor);
+      }
+
+      const buttonSelected = editor.isActive("buttonNode");
+      setHasSelectedButton(buttonSelected);
+
+      if (buttonSelected) {
+        const attrs = editor.getAttributes("buttonNode");
+        setButtonProps({
+          text: attrs.text ?? "",
+          href: attrs.href ?? "",
+          backgroundColor: attrs.backgroundColor ?? "#6366f1",
+          textColor: attrs.textColor ?? "#ffffff",
+          textAlign: attrs.textAlign ?? "center",
+        });
       }
     };
 
@@ -292,69 +289,61 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
     };
   }, [editor]);
 
-  const insertImageFromUrl = () => {
-    if (!editor) {
+  // Handle button property updates
+  useEffect(() => {
+    if (!editor || !hasSelectedButton) {
       return;
     }
 
-    const url = window.prompt("Enter image URL");
-    if (!url || !url.trim()) {
-      return;
-    }
+    const currentAttrs = editor.getAttributes("buttonNode");
+    const hasChanged =
+      currentAttrs.text !== buttonProps.text ||
+      currentAttrs.href !== buttonProps.href ||
+      currentAttrs.backgroundColor !== buttonProps.backgroundColor ||
+      currentAttrs.textColor !== buttonProps.textColor ||
+      currentAttrs.textAlign !== buttonProps.textAlign;
 
-    editor.chain().focus().setImage({ src: url.trim() }).run();
+    if (hasChanged) {
+      editor.chain().updateAttributes("buttonNode", buttonProps).run();
+    }
+  }, [editor, hasSelectedButton, buttonProps]);
+
+  const handlePickImageFromDesktop = () => {
+    imageInputRef.current?.click();
   };
 
-  const insertCtaButton = () => {
+  const handleImageFileChange = async (event) => {
     if (!editor) {
       return;
     }
 
-    const promptedText = window.prompt("CTA text", ctaText || "Verify Email");
-    if (promptedText === null) {
+    const file = event.target.files?.[0];
+    if (!file) {
       return;
     }
 
-    const cleanText = promptedText.trim();
-    if (!cleanText) {
-      window.alert("CTA text is required.");
-      return;
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await api.post("/templates/upload-image", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      editor
+        .chain()
+        .focus()
+        .setImage({ src: response.data.url, imageAlign: "center" })
+        .run();
+    } catch (error) {
+      window.alert(
+        error.response?.data?.message || "Failed to upload image from desktop",
+      );
+    } finally {
+      event.target.value = "";
     }
-
-    const promptedUrl = window.prompt(
-      "CTA link URL",
-      ctaUrl || "https://example.com/verify",
-    );
-    if (promptedUrl === null) {
-      return;
-    }
-
-    const cleanUrl = promptedUrl.trim();
-    if (!cleanUrl) {
-      window.alert("CTA URL is required.");
-      return;
-    }
-
-    // Keep the control panel in sync with the just-inserted CTA.
-    setCtaText(cleanText);
-    setCtaUrl(cleanUrl);
-
-    editor
-      .chain()
-      .focus()
-      .insertCtaButton({
-        text: cleanText,
-        href: cleanUrl,
-        bgColor: ctaBgColor,
-        textColor: ctaTextColor,
-        align: ctaAlign,
-        radius: ctaRadius,
-        fontSize: ctaFontSize,
-        width: ctaWidth,
-        paddingX: ctaPaddingX,
-        paddingY: ctaPaddingY,
-      })
-      .run();
   };
 
   const setLinkForSelection = () => {
@@ -388,80 +377,41 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
   };
 
   useEffect(() => {
-    if (!editor || !hasSelectedCta) {
+    if (!editor || !hasSelectedImage) {
       return;
     }
 
-    const attrs = editor.getAttributes("ctaButton");
-    const nextAttrs = {
-      text: ctaText,
-      href: ctaUrl,
-      bgColor: ctaBgColor,
-      textColor: ctaTextColor,
-      align: ctaAlign,
-      radius: ctaRadius,
-      fontSize: ctaFontSize,
-      width: ctaWidth,
-      paddingX: ctaPaddingX,
-      paddingY: ctaPaddingY,
-    };
-
-    const isSame =
-      (attrs.text || "") === nextAttrs.text &&
-      (attrs.href || "") === nextAttrs.href &&
-      (attrs.bgColor || "") === nextAttrs.bgColor &&
-      (attrs.textColor || "") === nextAttrs.textColor &&
-      (attrs.align || "") === nextAttrs.align &&
-      Number(attrs.radius || 8) === Number(nextAttrs.radius) &&
-      Number(attrs.fontSize || 14) === Number(nextAttrs.fontSize) &&
-      Number(attrs.width || 0) === Number(nextAttrs.width) &&
-      Number(attrs.paddingX || 18) === Number(nextAttrs.paddingX) &&
-      Number(attrs.paddingY || 12) === Number(nextAttrs.paddingY);
-
-    if (isSame) {
+    const attrs = editor.getAttributes("image");
+    if ((attrs.imageAlign || "center") === imageAlign) {
       return;
     }
 
-    editor.chain().focus().updateCtaButton(nextAttrs).run();
-  }, [
-    editor,
-    hasSelectedCta,
-    ctaText,
-    ctaUrl,
-    ctaBgColor,
-    ctaTextColor,
-    ctaAlign,
-    ctaRadius,
-    ctaFontSize,
-    ctaWidth,
-    ctaPaddingX,
-    ctaPaddingY,
-  ]);
+    editor.chain().updateAttributes("image", { imageAlign }).run();
+  }, [editor, hasSelectedImage, imageAlign]);
 
-  const applyCtaPreset = (preset) => {
-    if (preset === "sm") {
-      setCtaFontSize(12);
-      setCtaPaddingX(14);
-      setCtaPaddingY(9);
-      setCtaRadius(6);
-      setCtaWidth(0);
+  const deleteSelectedImage = () => {
+    if (!editor || !hasSelectedImage) {
       return;
     }
 
-    if (preset === "md") {
-      setCtaFontSize(14);
-      setCtaPaddingX(18);
-      setCtaPaddingY(12);
-      setCtaRadius(8);
-      setCtaWidth(0);
+    editor.chain().focus().deleteSelection().run();
+    setHasSelectedImage(false);
+  };
+
+  const insertButton = () => {
+    if (!editor) {
+      return;
+    }
+    editor.chain().focus().setButton().run();
+  };
+
+  const deleteSelectedButton = () => {
+    if (!editor || !hasSelectedButton) {
       return;
     }
 
-    setCtaFontSize(16);
-    setCtaPaddingX(22);
-    setCtaPaddingY(14);
-    setCtaRadius(10);
-    setCtaWidth(240);
+    editor.chain().focus().deleteSelection().run();
+    setHasSelectedButton(false);
   };
 
   if (!editor) {
@@ -474,7 +424,7 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
 
   return (
     <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
-      <div className="flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5">
+      <div className="flex flex-nowrap items-center gap-1 border-b border-gray-200 bg-white px-2 py-1.5 overflow-hidden">
         <ToolbarButton
           title="Undo"
           onClick={() => editor.chain().focus().undo().run()}
@@ -508,20 +458,30 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
         >
           <Link2 className="h-4 w-4" />
         </ToolbarButton>
-        <div className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-1.5 py-1">
-          <Paintbrush className="h-3.5 w-3.5 text-gray-500" />
-          <input
-            type="color"
-            value={textColor}
-            onChange={(event) => {
-              const next = event.target.value;
-              setTextColor(next);
-              editor.chain().focus().setColor(next).run();
-            }}
-            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
-            title="Text color"
-          />
-        </div>
+        <ToolbarButton
+          title="Text color"
+          onClick={() => textColorInputRef.current?.click()}
+        >
+          <span
+            className="text-sm font-semibold underline decoration-2"
+            style={{ color: textColor }}
+          >
+            A
+          </span>
+        </ToolbarButton>
+        <input
+          ref={textColorInputRef}
+          type="color"
+          value={textColor}
+          onChange={(event) => {
+            const next = event.target.value;
+            setTextColor(next);
+            editor.chain().focus().setColor(next).run();
+          }}
+          className="absolute h-0 w-0 opacity-0 pointer-events-none"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
         <ToolbarButton
           title="Heading 1"
           isActive={editor.isActive("heading", { level: 1 })}
@@ -575,184 +535,180 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
           <ListOrdered className="h-4 w-4" />
         </ToolbarButton>
         <div className="mx-1 h-5 w-px bg-gray-200" />
-        <ToolbarButton title="Insert image by URL" onClick={insertImageFromUrl}>
+        <ToolbarButton
+          title="Insert image from desktop"
+          onClick={handlePickImageFromDesktop}
+        >
           <ImagePlus className="h-4 w-4" />
         </ToolbarButton>
-        <ToolbarButton title="Insert CTA button" onClick={insertCtaButton}>
-          <MousePointerClick className="h-4 w-4" />
+        <ToolbarButton title="Add Button" onClick={insertButton}>
+          <RectangleHorizontal className="h-4 w-4" />
         </ToolbarButton>
       </div>
 
       <EditorContent editor={editor} />
 
-      {hasSelectedCta && (
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageFileChange}
+        className="hidden"
+      />
+
+      {hasSelectedImage && (
         <div className="border-t border-gray-100 bg-gray-50 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-gray-600">
-              CTA Controls
+              Image Controls
             </span>
-            <input
-              type="text"
-              value={ctaText}
-              onChange={(event) => setCtaText(event.target.value)}
-              placeholder="Button text"
-              className="h-7 w-32 rounded border border-gray-200 bg-white px-2 text-xs text-gray-700"
-            />
-            <input
-              type="text"
-              value={ctaUrl}
-              onChange={(event) => setCtaUrl(event.target.value)}
-              placeholder="Button link"
-              className="h-7 w-52 rounded border border-gray-200 bg-white px-2 text-xs text-gray-700"
-            />
-            <span className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500">
-              Live update
-            </span>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              BG
-              <input
-                type="color"
-                value={ctaBgColor}
-                onChange={(event) => setCtaBgColor(event.target.value)}
-                className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              Text
-              <input
-                type="color"
-                value={ctaTextColor}
-                onChange={(event) => setCtaTextColor(event.target.value)}
-                className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              W
-              <input
-                type="number"
-                min="0"
-                max="700"
-                value={ctaWidth}
-                onChange={(event) =>
-                  setCtaWidth(Number(event.target.value || 0))
-                }
-                className="h-7 w-14 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              Radius
-              <input
-                type="number"
-                min="0"
-                max="48"
-                value={ctaRadius}
-                onChange={(event) =>
-                  setCtaRadius(Number(event.target.value || 0))
-                }
-                className="h-7 w-14 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              Font
-              <input
-                type="number"
-                min="10"
-                max="24"
-                value={ctaFontSize}
-                onChange={(event) =>
-                  setCtaFontSize(Number(event.target.value || 14))
-                }
-                className="h-7 w-14 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              Px
-              <input
-                type="number"
-                min="8"
-                max="40"
-                value={ctaPaddingX}
-                onChange={(event) =>
-                  setCtaPaddingX(Number(event.target.value || 18))
-                }
-                className="h-7 w-14 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-500">
-              Py
-              <input
-                type="number"
-                min="6"
-                max="28"
-                value={ctaPaddingY}
-                onChange={(event) =>
-                  setCtaPaddingY(Number(event.target.value || 12))
-                }
-                className="h-7 w-14 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
-              />
-            </label>
             <button
               type="button"
-              onClick={() => applyCtaPreset("sm")}
-              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
-            >
-              Small
-            </button>
-            <button
-              type="button"
-              onClick={() => applyCtaPreset("md")}
-              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
-            >
-              Medium
-            </button>
-            <button
-              type="button"
-              onClick={() => applyCtaPreset("lg")}
-              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
-            >
-              Large
-            </button>
-            <button
-              type="button"
-              onClick={() => setCtaAlign("left")}
+              onClick={() => setImageAlign("left")}
               className={`rounded-md px-2 py-1 text-xs ${
-                ctaAlign === "left"
+                imageAlign === "left"
                   ? "bg-gray-900 text-white"
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              L
+              Left
             </button>
             <button
               type="button"
-              onClick={() => setCtaAlign("center")}
+              onClick={() => setImageAlign("center")}
               className={`rounded-md px-2 py-1 text-xs ${
-                ctaAlign === "center"
+                imageAlign === "center"
                   ? "bg-gray-900 text-white"
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              C
+              Center
             </button>
             <button
               type="button"
-              onClick={() => setCtaAlign("right")}
+              onClick={() => setImageAlign("right")}
               className={`rounded-md px-2 py-1 text-xs ${
-                ctaAlign === "right"
+                imageAlign === "right"
                   ? "bg-gray-900 text-white"
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              R
+              Right
+            </button>
+            <button
+              type="button"
+              onClick={deleteSelectedImage}
+              className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete Image
             </button>
           </div>
         </div>
       )}
 
-      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
-        Click an image to resize by dragging its corners. Select a CTA button to
-        edit size, colors, alignment, and link.
-      </div>
+      {hasSelectedButton && (
+        <div className="border-t border-gray-100 bg-gray-50 px-3 py-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Button Settings
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">
+                  Text
+                </label>
+                <input
+                  type="text"
+                  value={buttonProps.text}
+                  onChange={(e) =>
+                    setButtonProps((prev) => ({
+                      ...prev,
+                      text: e.target.value,
+                    }))
+                  }
+                  className="rounded border border-gray-300 px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500"
+                  placeholder="Button text"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">
+                  Link
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={buttonProps.href}
+                    onChange={(e) =>
+                      setButtonProps((prev) => ({
+                        ...prev,
+                        href: e.target.value,
+                      }))
+                    }
+                    className="rounded border border-gray-300 px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 w-40"
+                    placeholder="https://"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">
+                  Colors
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    title="Background Color"
+                    onClick={() => btnBgColorInputRef.current?.click()}
+                    className="h-6 w-6 rounded border border-gray-300 shadow-sm"
+                    style={{ backgroundColor: buttonProps.backgroundColor }}
+                  />
+                  <input
+                    ref={btnBgColorInputRef}
+                    type="color"
+                    value={buttonProps.backgroundColor}
+                    onChange={(e) =>
+                      setButtonProps((prev) => ({
+                        ...prev,
+                        backgroundColor: e.target.value,
+                      }))
+                    }
+                    className="absolute h-0 w-0 opacity-0 pointer-events-none"
+                  />
+
+                  <button
+                    title="Text Color"
+                    onClick={() => btnTextColorInputRef.current?.click()}
+                    className="flex h-6 w-6 items-center justify-center rounded border border-gray-300 bg-white shadow-sm"
+                  >
+                    <span
+                      className="text-xs font-bold"
+                      style={{ color: buttonProps.textColor }}
+                    >
+                      A
+                    </span>
+                  </button>
+                  <input
+                    ref={btnTextColorInputRef}
+                    type="color"
+                    value={buttonProps.textColor}
+                    onChange={(e) =>
+                      setButtonProps((prev) => ({
+                        ...prev,
+                        textColor: e.target.value,
+                      }))
+                    }
+                    className="absolute h-0 w-0 opacity-0 pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editor.isEmpty && (
         <p className="pointer-events-none px-4 pb-3 text-sm text-gray-400">

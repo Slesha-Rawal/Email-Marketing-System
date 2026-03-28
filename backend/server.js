@@ -9,7 +9,10 @@ import contactGroupRoutes from "./routes/contactGroupRoutes.js";
 import templateRoutes from "./routes/templateRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
+import userAdminRoutes from "./routes/userAdminRoutes.js";
 import { startCampaignScheduler } from "./controllers/campaignController.js";
+import { startDisposableDomainAutoUpdate } from "./utils/disposableDomainService.js";
+import { ensureUserLastLoginColumn } from "./utils/userSchemaMaintenance.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,11 +25,12 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "*",
     credentials: true,
   }),
 );
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -35,6 +39,7 @@ app.use("/api", contactGroupRoutes);
 app.use("/api", templateRoutes);
 app.use("/api", campaignRoutes);
 app.use("/api", analyticsRoutes);
+app.use("/api", userAdminRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({ message: "Route not found" });
@@ -44,4 +49,11 @@ app.use((req, res) => {
 app.listen(3001, () => {
   console.log("Server is running on port 3001");
   startCampaignScheduler();
+  ensureUserLastLoginColumn();
+
+  startDisposableDomainAutoUpdate().catch((error) => {
+    console.error(
+      `[disposable-domains] auto-update service failed to start: ${error.message}`,
+    );
+  });
 });
