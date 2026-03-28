@@ -18,6 +18,42 @@ function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
 
+  const isActivePath = (itemPath) => {
+    if (itemPath === "/") {
+      return location.pathname === "/";
+    }
+
+    if (itemPath === "/contact") {
+      return (
+        location.pathname === "/contact" ||
+        location.pathname.startsWith("/contact/") ||
+        location.pathname === "/add-contact"
+      );
+    }
+
+    if (itemPath === "/templates") {
+      return (
+        location.pathname === "/templates" ||
+        location.pathname.startsWith("/templates/") ||
+        location.pathname === "/template-builder" ||
+        location.pathname.startsWith("/template-builder/")
+      );
+    }
+
+    if (itemPath === "/settings") {
+      return location.pathname === "/settings";
+    }
+
+    if (itemPath === "/profile") {
+      return location.pathname === "/profile";
+    }
+
+    return (
+      location.pathname === itemPath ||
+      location.pathname.startsWith(`${itemPath}/`)
+    );
+  };
+
   const navItems = [
     { name: "Overview", path: "/", Icon: House },
     { name: "Contacts", path: "/contact", Icon: Users },
@@ -26,10 +62,13 @@ function Sidebar() {
     { name: "Send Emails", path: "/send-emails", Icon: Send },
     { name: "Email Logs", path: "/email-logs", Icon: History },
     { name: "Analytics", path: "/analytics", Icon: BarChart3 },
+    { name: "My Profile", path: "/profile", Icon: User },
     ...(user?.role === "admin"
-      ? [{ name: "Users", path: "/users", Icon: User }]
+      ? [
+          { name: "Users", path: "/users", Icon: User },
+          { name: "Settings", path: "/settings", Icon: Settings },
+        ]
       : []),
-    { name: "Settings", path: "/settings", Icon: Settings },
   ];
 
   return (
@@ -46,7 +85,7 @@ function Sidebar() {
         <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.Icon;
-            const active = location.pathname === item.path;
+            const active = isActivePath(item.path);
             return (
               <Link
                 key={item.path}

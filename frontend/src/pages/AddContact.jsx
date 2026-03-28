@@ -37,20 +37,31 @@ const AddContact = () => {
   const [error, setError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFileForGroup, setPendingFileForGroup] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null); // single | upload
+
+  const fetchGroups = async () => {
+    try {
+      const response = await api.get("/contact-groups");
+      setGroups(response.data);
+    } catch (err) {
+      console.error("Failed to load groups for dropdown:", err);
+    }
+  };
 
   useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const response = await api.get("/contact-groups");
-        setGroups(response.data);
-      } catch (err) {
-        console.error("Failed to load groups for dropdown:", err);
-      }
-    };
     fetchGroups();
   }, []);
 
-  const handleAddContact = async () => {
+  const openGroupModalForAction = (action) => {
+    setSelectedOption("skip");
+    setSelectedGroupId("");
+    setNewGroupName("");
+    setModalStep("options");
+    setPendingAction(action);
+    setShowGroupModal(true);
+  };
+
+  const handleAddContactClick = () => {
     setMessage("");
     setError("");
 
@@ -64,19 +75,47 @@ const AddContact = () => {
       return;
     }
 
+    openGroupModalForAction("single");
+  };
+
+  const addSingleContact = async (groupAction, groupValue) => {
+    setMessage("");
+    setError("");
+
+    const response = await api.post("/contacts", {
+      contact_name: name.trim(),
+      contact_email: email.trim().toLowerCase(),
+      contact_status: "active",
+      verify: verifySingle,
+    });
+
+    const newContactId = response?.data?.id;
+
+    if (newContactId && groupAction !== "skip") {
+      let targetGroupId = groupAction === "existing" ? groupValue : null;
+
+      if (groupAction === "new") {
+        const createdGroup = await api.post("/contact-groups", {
+          group_name: groupValue,
+        });
+        targetGroupId = createdGroup?.data?.group_id;
+      }
+
+      if (targetGroupId) {
+        await api.post(`/contact-groups/${targetGroupId}/contacts`, {
+          contactIds: [newContactId],
+        });
+      }
+    }
+
     try {
-      await api.post("/contacts", {
-        contact_name: name.trim(),
-        contact_email: email.trim().toLowerCase(),
-        contact_status: "active",
-        verify: verifySingle,
-      });
+      await fetchGroups();
       setMessage("Contact added successfully");
       setName("");
       setEmail("");
       setTimeout(() => navigate("/contact"), 800);
-    } catch (requestError) {
-      setError(requestError.response?.data?.error || "Failed to add contact");
+    } catch {
+      // No-op, message flow should continue even if groups refresh fails.
     }
   };
 
@@ -106,16 +145,32 @@ const AddContact = () => {
       return;
     }
     setPendingFileForGroup(selectedFile);
-    setSelectedOption("skip");
+    openGroupModalForAction("upload");
+  };
+
+  const closeGroupModal = () => {
+    setShowGroupModal(false);
     setModalStep("options");
-    setShowGroupModal(true);
+    setPendingAction(null);
   };
 
   const handleModalContinue = async () => {
     if (modalStep === "options") {
       if (selectedOption === "skip") {
-        await performUpload("skip", null);
-        setShowGroupModal(false);
+        try {
+          if (pendingAction === "single") {
+            await addSingleContact("skip", null);
+          } else {
+            await performUpload("skip", null);
+          }
+          closeGroupModal();
+        } catch (requestError) {
+          setError(
+            requestError.response?.data?.error ||
+              requestError.response?.data?.message ||
+              "Failed to continue",
+          );
+        }
       } else if (selectedOption === "existing") {
         setModalStep("existing");
       } else if (selectedOption === "new") {
@@ -126,15 +181,39 @@ const AddContact = () => {
         setError("Please select a group");
         return;
       }
-      await performUpload("existing", selectedGroupId);
-      setShowGroupModal(false);
+      try {
+        if (pendingAction === "single") {
+          await addSingleContact("existing", selectedGroupId);
+        } else {
+          await performUpload("existing", selectedGroupId);
+        }
+        closeGroupModal();
+      } catch (requestError) {
+        setError(
+          requestError.response?.data?.error ||
+            requestError.response?.data?.message ||
+            "Failed to continue",
+        );
+      }
     } else if (modalStep === "new") {
       if (!newGroupName.trim()) {
         setError("Please enter a group name");
         return;
       }
-      await performUpload("new", newGroupName.trim());
-      setShowGroupModal(false);
+      try {
+        if (pendingAction === "single") {
+          await addSingleContact("new", newGroupName.trim());
+        } else {
+          await performUpload("new", newGroupName.trim());
+        }
+        closeGroupModal();
+      } catch (requestError) {
+        setError(
+          requestError.response?.data?.error ||
+            requestError.response?.data?.message ||
+            "Failed to continue",
+        );
+      }
     }
   };
 
@@ -185,9 +264,13 @@ const AddContact = () => {
       <div className="flex-1 ml-64">
         <main className="p-8">
           <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 mb-8">
-              Add Client
-            </h1>
+            <header className="mb-8">
+              <h1 className="text-3xl font-bold text-gray-900">Add Client</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Add one contact manually or import multiple contacts with a
+                file.
+              </p>
+            </header>
 
             {message && (
               <div className="mb-6 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700 border border-green-200">
@@ -209,7 +292,7 @@ const AddContact = () => {
               </h2>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="relative">
+                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <User className="w-5 h-5" />
                   </div>
@@ -218,11 +301,11 @@ const AddContact = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Enter Name"
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
                   />
                 </div>
 
-                <div className="relative">
+                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <Mail className="w-5 h-5" />
                   </div>
@@ -230,8 +313,8 @@ const AddContact = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email Address"
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Enter Email Address"
+                    className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -239,28 +322,24 @@ const AddContact = () => {
               <div className="flex items-start gap-3 mb-6">
                 <input
                   type="checkbox"
-                  id="verify-emails"
-                  checked={verifyImport}
-                  onChange={(e) => setVerifyImport(e.target.checked)}
-                  className="mt-1 w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  id="verify-single-email"
+                  checked={verifySingle}
+                  onChange={(e) => setVerifySingle(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                 />
                 <label
-                  htmlFor="verify-emails"
+                  htmlFor="verify-single-email"
                   className="flex flex-col cursor-pointer"
                 >
                   <span className="text-sm font-medium text-gray-900">
-                    Verify emails before uploading
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">
-                    Contacts with unverified emails will be skipped
+                    Verify emails
                   </span>
                 </label>
               </div>
 
               <button
-                onClick={handleAddContact}
-                disabled={!name.trim() || !email.trim()}
-                className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mx-auto block"
+                onClick={handleAddContactClick}
+                className="mx-auto flex w-fit items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98]"
               >
                 + Add contact
               </button>
@@ -340,30 +419,27 @@ const AddContact = () => {
               <div className="flex items-start gap-3 mb-6">
                 <input
                   type="checkbox"
-                  id="verify-emails"
+                  id="verify-import-emails"
                   checked={verifyImport}
                   onChange={(e) => setVerifyImport(e.target.checked)}
-                  className="mt-1 w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                 />
                 <label
-                  htmlFor="verify-emails"
+                  htmlFor="verify-import-emails"
                   className="flex flex-col cursor-pointer"
                 >
                   <span className="text-sm font-medium text-gray-900">
-                    Verify emails before uploading
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">
-                    Contacts with unverified emails will be skipped
+                    Verify emails
                   </span>
                 </label>
               </div>
 
               <button
                 onClick={handleUploadClick}
-                disabled={!selectedFile || isUploading}
-                className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mx-auto"
+                disabled={isUploading}
+                className="mx-auto flex w-fit items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98] disabled:cursor-not-allowed"
               >
-                <Upload className="w-4 h-4" />
+                <Upload className="h-4 w-4 stroke-[3px]" />
                 Upload File
               </button>
             </div>
@@ -374,23 +450,23 @@ const AddContact = () => {
       {/* MODAL */}
       {showGroupModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-sm max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-2xl shadow-lg p-6 w-full max-w-lg border border-gray-100 max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setShowGroupModal(false)}
+              onClick={closeGroupModal}
               className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <X className="w-5 h-5 text-gray-400" />
             </button>
 
-            <h2 className="text-xl font-bold text-gray-900 mb-2">
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">
               Add to Group
             </h2>
-            <p className="text-xs text-gray-500 mb-6">
-              Step 1 of 5 - Choose an option
+            <p className="text-sm text-gray-500 mb-6">
+              Choose how you want to assign contacts.
             </p>
 
             {modalStep === "options" && (
-              <div className="space-y-3 mb-8">
+              <div className="space-y-2.5 mb-6">
                 {[
                   {
                     id: "skip",
@@ -413,50 +489,51 @@ const AddContact = () => {
                 ].map((opt) => {
                   const IconComp = opt.icon;
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={opt.id}
                       onClick={() => setSelectedOption(opt.id)}
-                      className={`flex items-center gap-4 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                      className={`w-full flex items-center gap-3 p-3.5 border rounded-xl text-left transition-all ${
                         selectedOption === opt.id
-                          ? "border-indigo-500 bg-indigo-50"
-                          : "border-gray-200 bg-white hover:border-indigo-300"
+                          ? "border-indigo-300 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-indigo-200"
                       }`}
                     >
                       <div
-                        className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${selectedOption === opt.id ? "bg-indigo-100" : "bg-gray-100"}`}
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${selectedOption === opt.id ? "bg-indigo-100" : "bg-gray-100"}`}
                       >
                         <IconComp
-                          className={`w-6 h-6 ${selectedOption === opt.id ? "text-indigo-600" : "text-gray-600"}`}
+                          className={`w-5 h-5 ${selectedOption === opt.id ? "text-indigo-600" : "text-gray-600"}`}
                         />
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold text-gray-900">
+                        <div className="text-base font-semibold text-gray-900">
                           {opt.title}
                         </div>
                         <div className="text-xs text-gray-500">{opt.desc}</div>
                       </div>
                       <div
-                        className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${selectedOption === opt.id ? "bg-gray-700 text-white" : "border-2 border-gray-300"}`}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${selectedOption === opt.id ? "bg-indigo-600 text-white" : "border border-gray-300"}`}
                       >
                         {selectedOption === opt.id && (
-                          <span className="text-sm font-bold">✓</span>
+                          <span className="text-xs font-bold">✓</span>
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             )}
 
             {modalStep === "existing" && (
-              <div className="mb-8">
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-900 mb-3">
                   Select Group
                 </label>
                 <select
                   value={selectedGroupId}
                   onChange={(e) => setSelectedGroupId(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
                 >
                   <option value="">Choose a group...</option>
                   {groups.map((g) => (
@@ -469,7 +546,7 @@ const AddContact = () => {
             )}
 
             {modalStep === "new" && (
-              <div className="mb-8">
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-900 mb-3">
                   Group Name
                 </label>
@@ -478,22 +555,22 @@ const AddContact = () => {
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                   placeholder="Enter group name"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:border-indigo-300 focus:outline-none"
                 />
               </div>
             )}
 
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => setShowGroupModal(false)}
-                className="px-4 py-2.5 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                onClick={closeGroupModal}
+                className="px-6 py-2.5 bg-white border border-gray-300 text-gray-900 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleModalContinue}
                 disabled={isUploading}
-                className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
                 {modalStep === "options" && selectedOption === "skip"
                   ? "Continue"

@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Monitor, Save, Smartphone } from "lucide-react";
+import { Monitor, Smartphone } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import RichTextEditor from "../components/RichTextEditor.jsx";
 
 const defaultContent = "";
+const MIN_PREVIEW_HEIGHT = 240;
+const MAX_PREVIEW_HEIGHT = 1400;
+const MOBILE_PREVIEW_CONTENT_WIDTH = 375;
 
 const isRichTextEmpty = (html = "") => {
   const plainText = html
@@ -36,6 +39,7 @@ const TemplateBuilder = () => {
   const [iframeScale, setIframeScale] = useState(1);
   const [iframeContentHeight, setIframeContentHeight] = useState(500);
   const [iframeContentWidth, setIframeContentWidth] = useState(700);
+  const [showHtmlWarning, setShowHtmlWarning] = useState(false);
   const previewViewportRef = useRef(null);
   const previewIframeRef = useRef(null);
 
@@ -49,10 +53,22 @@ const TemplateBuilder = () => {
 
     try {
       const doc = iframe.contentWindow.document;
-      const contentHeight = Math.max(
+      const bodyHeight = Math.max(
         doc.body?.scrollHeight || 0,
-        doc.documentElement?.scrollHeight || 0,
+        Math.ceil(doc.body?.getBoundingClientRect?.().height || 0),
       );
+      const htmlHeight = Math.max(
+        doc.documentElement?.scrollHeight || 0,
+        Math.ceil(doc.documentElement?.getBoundingClientRect?.().height || 0),
+      );
+
+      // Prefer body-based sizing; only trust html height when it is a near match.
+      // This avoids rare runaway documentElement heights that stretch the page.
+      let contentHeight = Math.max(bodyHeight, MIN_PREVIEW_HEIGHT);
+      if (htmlHeight > 0 && htmlHeight <= contentHeight * 1.25) {
+        contentHeight = Math.max(contentHeight, htmlHeight);
+      }
+
       const contentWidth = Math.max(
         doc.body?.scrollWidth || 0,
         doc.documentElement?.scrollWidth || 0,
@@ -62,25 +78,59 @@ const TemplateBuilder = () => {
         return;
       }
 
-      const viewportWidth = viewport.clientWidth || contentWidth;
-      const nextScale = Math.min(1, viewportWidth / contentWidth);
+      const targetContentWidth =
+        previewMode === "mobile" ? MOBILE_PREVIEW_CONTENT_WIDTH : contentWidth;
+      const viewportWidth = viewport.clientWidth || targetContentWidth;
+      const nextScale = Math.min(1, viewportWidth / targetContentWidth);
 
       setIframeScale(nextScale);
       setIframeContentHeight(contentHeight);
-      setIframeContentWidth(contentWidth);
-      setIframeHeight(Math.max(240, Math.ceil(contentHeight * nextScale)));
+      setIframeContentWidth(targetContentWidth);
+      const scaledHeight = Math.max(
+        MIN_PREVIEW_HEIGHT,
+        Math.ceil(contentHeight * nextScale),
+      );
+      setIframeHeight(Math.min(MAX_PREVIEW_HEIGHT, scaledHeight));
     } catch (err) {
       console.error("Failed to update preview layout:", err);
     }
   };
 
+  const isHtmlContent = (content) => {
+    const trimmed = content.trim().toLowerCase();
+    return (
+      trimmed.startsWith("<!doctype") ||
+      trimmed.startsWith("<html") ||
+      /<\w+[^>]*>/i.test(content)
+    );
+  };
+
   const switchToRichEditor = () => {
-    setEmailContent("");
+    // If the current content is raw HTML, show a warning
+    if (
+      editorMode === "html" &&
+      emailContent.trim() &&
+      isHtmlContent(emailContent)
+    ) {
+      setShowHtmlWarning(true);
+      return;
+    }
     setEditorMode("rich");
   };
 
-  const switchToHtmlEditor = () => {
+  const handleHtmlWarningContinue = () => {
+    // Clear the editor and switch to rich mode
     setEmailContent("");
+    setEditorMode("rich");
+    setShowHtmlWarning(false);
+  };
+
+  const handleHtmlWarningCancel = () => {
+    // Close the warning and stay in HTML mode
+    setShowHtmlWarning(false);
+  };
+
+  const switchToHtmlEditor = () => {
     setEditorMode("html");
   };
 
@@ -120,6 +170,22 @@ const TemplateBuilder = () => {
   }, []);
 
   const getPreviewHtml = () => {
+    const ensureViewportMeta = (html) => {
+      if (/<meta\s+name=["']viewport["']/i.test(html)) {
+        return html;
+      }
+
+      if (/<head[^>]*>/i.test(html)) {
+        return html.replace(
+          /<head[^>]*>/i,
+          (match) =>
+            `${match}\n<meta name="viewport" content="width=device-width, initial-scale=1" />`,
+        );
+      }
+
+      return html;
+    };
+
     const unsubscribeFooter = `
       <p style="margin:24px 0 0 0;text-align:center;font-size:12px;line-height:1.5;color:#9ca3af;font-family:sans-serif;">
         You are receiving these emails because you are subscribed to our email updates.<br/>
@@ -134,6 +200,7 @@ const TemplateBuilder = () => {
         <html>
           <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
             <style>
               body {
                 margin: 0;
@@ -153,14 +220,16 @@ const TemplateBuilder = () => {
     if (trimmed.startsWith("<!doctype") || trimmed.startsWith("<html")) {
       if (/<\/body>/i.test(emailContent)) {
         if (!shouldAddFooter) {
-          return emailContent;
+          return ensureViewportMeta(emailContent);
         }
-        return emailContent.replace(/<\/body>/i, `${unsubscribeFooter}</body>`);
+        return ensureViewportMeta(
+          emailContent.replace(/<\/body>/i, `${unsubscribeFooter}</body>`),
+        );
       }
 
-      return shouldAddFooter
-        ? `${emailContent}${unsubscribeFooter}`
-        : emailContent;
+      return ensureViewportMeta(
+        shouldAddFooter ? `${emailContent}${unsubscribeFooter}` : emailContent,
+      );
     }
 
     return `
@@ -168,6 +237,7 @@ const TemplateBuilder = () => {
       <html>
         <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <style>
             body { 
               margin: 0; 
@@ -197,6 +267,15 @@ const TemplateBuilder = () => {
       setTemplateName(editTemplate.template_name);
       setTemplateSubject(editTemplate.template_subject);
       setEmailContent(editTemplate.template_body);
+      // Preserve editor mode: detect if template body is HTML or rich text
+      if (
+        editTemplate.template_body &&
+        isHtmlContent(editTemplate.template_body)
+      ) {
+        setEditorMode("html");
+      } else {
+        setEditorMode("rich");
+      }
     }
   }, [editTemplate]);
 
@@ -239,10 +318,42 @@ const TemplateBuilder = () => {
     <div className="flex min-h-screen bg-gray-50 text-gray-900 font-sans">
       <Sidebar />
 
+      {/* HTML Content Warning Modal */}
+      {showHtmlWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 max-w-md p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">
+                Switch to Visual Editor?
+              </h3>
+              <p className="text-sm text-gray-600 mt-2">
+                The current HTML content cannot be properly converted to the
+                Visual Editor. The editor will be cleared when you switch. Do
+                you want to continue?
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={handleHtmlWarningCancel}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHtmlWarningContinue}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 ml-64 overflow-y-auto">
         <main className="p-6 lg:p-8">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+            <h1 className="text-3xl font-bold text-gray-900">
               {editTemplate ? "Edit Email Template" : "Add New Email Template"}
             </h1>
           </div>
@@ -265,28 +376,34 @@ const TemplateBuilder = () => {
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
                       Name
                     </label>
-                    <input
-                      type="text"
-                      value={templateName}
-                      onChange={(event) => setTemplateName(event.target.value)}
-                      placeholder="Enter name of Template"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
+                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                      <input
+                        type="text"
+                        value={templateName}
+                        onChange={(event) =>
+                          setTemplateName(event.target.value)
+                        }
+                        placeholder="Enter name of Template"
+                        className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
                       Subject
                     </label>
-                    <input
-                      type="text"
-                      value={templateSubject}
-                      onChange={(event) =>
-                        setTemplateSubject(event.target.value)
-                      }
-                      placeholder="Enter subject"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
+                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                      <input
+                        type="text"
+                        value={templateSubject}
+                        onChange={(event) =>
+                          setTemplateSubject(event.target.value)
+                        }
+                        placeholder="Enter subject"
+                        className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -322,7 +439,7 @@ const TemplateBuilder = () => {
                   </div>
 
                   {editorMode === "rich" ? (
-                    <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300 overflow-hidden">
                       <RichTextEditor
                         value={emailContent}
                         onChange={setEmailContent}
@@ -330,17 +447,14 @@ const TemplateBuilder = () => {
                       />
                     </div>
                   ) : (
-                    <div className="relative group">
+                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300 overflow-hidden">
                       <textarea
                         value={emailContent}
                         onChange={(e) => setEmailContent(e.target.value)}
-                        className="w-full min-h-90 rounded-lg border border-gray-200 bg-gray-900 text-gray-100 p-4 text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all leading-relaxed overflow-y-auto custom-scrollbar"
+                        className="block h-80 w-full border-none bg-gray-900 px-4 py-3.5 text-[13px] font-mono leading-relaxed text-gray-100 focus:outline-none overflow-auto resize-y [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                         placeholder="Enter body"
                         spellCheck="false"
                       />
-                      <div className="absolute top-4 right-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-400 transition-colors pointer-events-none">
-                        Raw HTML
-                      </div>
                     </div>
                   )}
                 </div>
@@ -351,12 +465,11 @@ const TemplateBuilder = () => {
                     disabled={isSaving}
                     className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
                   >
-                    <Save className="h-4 w-4" />
                     {isSaving
                       ? "Saving..."
                       : editTemplate
                         ? "Update Email Template"
-                        : "Add EmailTemplate"}
+                        : "Add Template"}
                   </button>
                 </div>
               </div>
@@ -400,12 +513,12 @@ const TemplateBuilder = () => {
                 </p>
               </div>
 
-              <div
-                className={`rounded-xl border border-gray-200 bg-white overflow-hidden mx-auto shadow-sm transition-all duration-300 ${previewMode === "mobile" ? "max-w-93.75" : "max-w-175"}`}
-              >
+              <div className="overflow-hidden mx-auto transition-all duration-300 max-w-175 rounded-none border-0 shadow-none">
                 <div
                   ref={previewViewportRef}
-                  className="bg-white relative overflow-hidden"
+                  className={`bg-white relative overflow-hidden ${
+                    previewMode === "mobile" ? "flex justify-center" : "block"
+                  }`}
                   style={{ height: `${iframeHeight}px` }}
                 >
                   <iframe
@@ -418,7 +531,8 @@ const TemplateBuilder = () => {
                       width: `${iframeContentWidth}px`,
                       height: `${iframeContentHeight}px`,
                       transform: `scale(${iframeScale})`,
-                      transformOrigin: "top left",
+                      transformOrigin:
+                        previewMode === "mobile" ? "top center" : "top left",
                       fontSize: "13px",
                       overflow: "hidden",
                     }}

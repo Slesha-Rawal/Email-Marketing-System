@@ -83,7 +83,7 @@ const ButtonNode = Node.create({
         default: "https://",
       },
       backgroundColor: {
-        default: "#6366f1", // indigo-600
+        default: "#4E9A43", // green
       },
       textColor: {
         default: "#ffffff",
@@ -103,7 +103,7 @@ const ButtonNode = Node.create({
           return {
             text: anchor?.textContent || "Learn More",
             href: anchor?.getAttribute("href") || "https://",
-            backgroundColor: anchor?.style.backgroundColor || "#6366f1",
+            backgroundColor: anchor?.style.backgroundColor || "#4E9A43",
             textColor: anchor?.style.color || "#ffffff",
             textAlign: element.style.textAlign || "center",
           };
@@ -163,7 +163,7 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
   const [buttonProps, setButtonProps] = useState({
     text: "Learn More",
     href: "https://",
-    backgroundColor: "#6366f1",
+    backgroundColor: "#4E9A43",
     textColor: "#ffffff",
     textAlign: "center",
   });
@@ -272,7 +272,7 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
         setButtonProps({
           text: attrs.text ?? "",
           href: attrs.href ?? "",
-          backgroundColor: attrs.backgroundColor ?? "#6366f1",
+          backgroundColor: attrs.backgroundColor ?? "#4E9A43",
           textColor: attrs.textColor ?? "#ffffff",
           textAlign: attrs.textAlign ?? "center",
         });
@@ -416,15 +416,15 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
 
   if (!editor) {
     return (
-      <div className="min-h-40 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-500">
+      <div className="min-h-40 bg-white px-4 py-3 text-sm text-gray-500">
         Loading editor...
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
-      <div className="flex flex-nowrap items-center gap-1 border-b border-gray-200 bg-white px-2 py-1.5 overflow-hidden">
+    <div className="bg-white">
+      <div className="flex flex-nowrap items-center gap-1 border-b border-gray-200 bg-white px-2 py-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <ToolbarButton
           title="Undo"
           onClick={() => editor.chain().focus().undo().run()}
@@ -659,13 +659,18 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
                 <label className="text-[10px] font-bold text-gray-500 uppercase">
                   Colors
                 </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    title="Background Color"
-                    onClick={() => btnBgColorInputRef.current?.click()}
-                    className="h-6 w-6 rounded border border-gray-300 shadow-sm"
-                    style={{ backgroundColor: buttonProps.backgroundColor }}
-                  />
+                <div className="flex items-start gap-3">
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      title="Background Color"
+                      onClick={() => btnBgColorInputRef.current?.click()}
+                      className="h-7 w-7 rounded border border-gray-300 shadow-sm"
+                      style={{ backgroundColor: buttonProps.backgroundColor }}
+                    />
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase">
+                      BG
+                    </span>
+                  </div>
                   <input
                     ref={btnBgColorInputRef}
                     type="color"
@@ -679,18 +684,23 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
                     className="absolute h-0 w-0 opacity-0 pointer-events-none"
                   />
 
-                  <button
-                    title="Text Color"
-                    onClick={() => btnTextColorInputRef.current?.click()}
-                    className="flex h-6 w-6 items-center justify-center rounded border border-gray-300 bg-white shadow-sm"
-                  >
-                    <span
-                      className="text-xs font-bold"
-                      style={{ color: buttonProps.textColor }}
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      title="Text Color"
+                      onClick={() => btnTextColorInputRef.current?.click()}
+                      className="flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-gray-900 shadow-sm"
                     >
-                      A
+                      <span
+                        className="text-xs font-bold"
+                        style={{ color: buttonProps.textColor }}
+                      >
+                        A
+                      </span>
+                    </button>
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase">
+                      Text
                     </span>
-                  </button>
+                  </div>
                   <input
                     ref={btnTextColorInputRef}
                     type="color"

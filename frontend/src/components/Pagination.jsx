@@ -7,7 +7,11 @@ import {
   ChevronsRight,
 } from "lucide-react";
 
-const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
+const Pagination = ({
+  tableRef,
+  options = [15, 30, 50],
+  footerRadiusClass = "rounded-b-xl",
+}) => {
   const normalizedOptions = options.length > 0 ? options : [15, 30, 50];
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(normalizedOptions[0]);
@@ -151,12 +155,14 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
   }
 
   return (
-    <div className="flex items-center justify-between border-t border-gray-200 bg-gray-100 px-4 py-2 mt-0 text-xs rounded-b-xl">
+    <div
+      className={`mt-0 flex items-center justify-between border-t border-gray-100 bg-gray-100 px-3 py-1.5 text-sm ${footerRadiusClass}`}
+    >
       <div className="flex items-center gap-0.5 text-gray-500">
         <button
           onClick={() => setCurrentPage(1)}
           disabled={currentPage === 1}
-          className={`h-8 w-8 flex items-center justify-center transition-colors ${
+          className={`h-7 w-7 flex items-center justify-center transition-colors ${
             currentPage === 1
               ? "text-gray-300 cursor-not-allowed"
               : "text-gray-500 hover:text-gray-700"
@@ -169,7 +175,7 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
         <button
           onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
           disabled={currentPage === 1}
-          className={`h-8 w-8 flex items-center justify-center transition-colors ${
+          className={`h-7 w-7 flex items-center justify-center transition-colors ${
             currentPage === 1
               ? "text-gray-300 cursor-not-allowed"
               : "text-gray-500 hover:text-gray-700"
@@ -184,7 +190,7 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
             key={index}
             onClick={() => typeof page === "number" && setCurrentPage(page)}
             disabled={page === "..."}
-            className={`h-8 min-w-8 px-1 font-medium transition-colors ${
+            className={`h-7 min-w-7 px-1 font-medium transition-colors ${
               page === currentPage
                 ? "text-indigo-600 font-semibold"
                 : page === "..."
@@ -201,7 +207,7 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
             setCurrentPage((prev) => Math.min(totalPages, prev + 1))
           }
           disabled={currentPage === totalPages}
-          className={`h-8 w-8 flex items-center justify-center transition-colors ${
+          className={`h-7 w-7 flex items-center justify-center transition-colors ${
             currentPage === totalPages
               ? "text-gray-300 cursor-not-allowed"
               : "text-gray-500 hover:text-gray-700"
@@ -214,7 +220,7 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
         <button
           onClick={() => setCurrentPage(totalPages)}
           disabled={currentPage === totalPages}
-          className={`h-8 w-8 flex items-center justify-center transition-colors ${
+          className={`h-7 w-7 flex items-center justify-center transition-colors ${
             currentPage === totalPages
               ? "text-gray-300 cursor-not-allowed"
               : "text-gray-500 hover:text-gray-700"
@@ -229,20 +235,20 @@ const Pagination = ({ tableRef, options = [15, 30, 50] }) => {
         <button
           type="button"
           onClick={() => setIsSizeMenuOpen((prev) => !prev)}
-          className="inline-flex min-w-14 items-center justify-between gap-1.5 rounded-lg border border-transparent px-2 py-1 text-xs font-semibold text-gray-600 transition-colors hover:text-gray-700 focus:outline-none"
+          className="inline-flex min-w-12 items-center justify-between gap-1 rounded-lg border border-transparent px-1.5 py-0.5 text-sm font-semibold text-gray-600 transition-colors hover:text-gray-700 focus:outline-none"
         >
           <span>{rowsPerPage}</span>
-          <ChevronDown className="h-4 w-4 text-gray-500" />
+          <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
         </button>
 
         {isSizeMenuOpen && (
-          <div className="absolute right-0 bottom-full z-20 mb-2 w-24 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-lg">
+          <div className="absolute right-0 bottom-full z-20 mb-1.5 w-20 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
             {normalizedOptions.map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => handleRowsPerPageChange(option)}
-                className={`w-full rounded-xl px-2 py-1.5 text-center text-2xl transition-colors ${
+                className={`w-full rounded-lg px-1.5 py-1 text-center text-sm transition-colors ${
                   rowsPerPage === option
                     ? "bg-stone-100 text-indigo-700"
                     : "text-gray-600 hover:bg-gray-50"

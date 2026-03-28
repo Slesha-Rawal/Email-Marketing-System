@@ -70,7 +70,6 @@ const Templates = () => {
       <Sidebar />
 
       <div className="flex-1 ml-64 flex flex-col overflow-hidden">
-
         <main className="flex-1 overflow-y-auto p-8">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -100,7 +99,7 @@ const Templates = () => {
 
           <div className="mb-6 p-0">
             <div className="flex items-center gap-4">
-              <div className="flex-1 relative">
+              <div className="flex-1 relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
                 <Search
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   size={20}
@@ -110,23 +109,13 @@ const Templates = () => {
                   placeholder="Search templates by name, subject, or body"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
                 />
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Templates List
-              </h3>
-              <span className="text-sm text-gray-600">
-                {filteredTemplates.length} template
-                {filteredTemplates.length !== 1 ? "s" : ""} found
-              </span>
-            </div>
-
+          <div className="p-0">
             {filteredTemplates.length === 0 ? (
               <div className="text-center py-12">
                 <Mail size={48} className="mx-auto text-gray-300 mb-4" />
@@ -175,11 +164,11 @@ const Templates = () => {
                     <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                       <div className="text-xs text-gray-500">
                         <div>
-                          Created:{" "}
-                          {new Date(template.created_at).toLocaleDateString()}
+                          Last Updated By:{" "}
+                          {template.created_by_name || "Unknown"}
                         </div>
                         <div>
-                          Updated:{" "}
+                          Last Updated Date:{" "}
                           {new Date(template.updated_at).toLocaleDateString()}
                         </div>
                       </div>

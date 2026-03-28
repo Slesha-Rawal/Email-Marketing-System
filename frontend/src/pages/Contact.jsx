@@ -174,11 +174,11 @@ function Contact() {
 
   const handleDeleteGroup = async () => {
     if (!selectedGroupId) {
-      return;
+      return false;
     }
 
     if (!window.confirm("Delete this group?")) {
-      return;
+      return false;
     }
 
     try {
@@ -186,8 +186,10 @@ function Contact() {
       setSelectedGroupId(null);
       setGroupContacts([]);
       await fetchGroups();
+      return true;
     } catch (error) {
       setGroupError(error.response?.data?.error || "Failed to delete group");
+      return false;
     }
   };
 
@@ -425,18 +427,18 @@ function Contact() {
   const filteredGroupContacts = useMemo(() => {
     const filtered = groupContacts.filter(
       (contact) =>
-        (statusFilter === "all" || contact.contact_status === statusFilter) &&
-        matchesAddedDateFilter(contact.created_at) &&
-        (contact.contact_name
+        contact.contact_name
           .toLowerCase()
           .includes(groupSearchTerm.toLowerCase()) ||
-          contact.contact_email
-            .toLowerCase()
-            .includes(groupSearchTerm.toLowerCase())),
+        contact.contact_email
+          .toLowerCase()
+          .includes(groupSearchTerm.toLowerCase()),
     );
 
-    return sortByAddedDate(filtered);
-  }, [groupContacts, groupSearchTerm, statusFilter, addedDateFilter]);
+    return [...filtered].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at),
+    );
+  }, [groupContacts, groupSearchTerm]);
 
   useEffect(() => {
     const updateIndicator = () => {
@@ -532,155 +534,146 @@ function Contact() {
             </div>
 
             {/* Search Row (with Filter and Add Button) */}
-            <div className="flex items-center justify-between mb-8 gap-6">
-              <div className="flex-1 max-w-xl">
-                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
-                  <input
-                    type="text"
-                    placeholder={
-                      activeTab === "all"
-                        ? "Search by name or email"
-                        : "Search segment members"
-                    }
-                    value={
-                      activeTab === "all" ? allSearchTerm : groupSearchTerm
-                    }
-                    onChange={(event) => {
-                      if (activeTab === "all") {
-                        setAllSearchTerm(event.target.value);
-                        return;
-                      }
-                      setGroupSearchTerm(event.target.value);
-                    }}
-                    className="w-full rounded-lg border-none bg-transparent px-3 py-3 pr-10 text-xs font-medium text-gray-700 placeholder:text-gray-500 focus:outline-none"
-                  />
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div ref={statusMenuRef} className="relative w-44">
-                  <button
-                    type="button"
-                    onClick={() => setIsStatusMenuOpen((prev) => !prev)}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-3 text-left text-xs font-medium text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between"
-                  >
-                    <span>{selectedStatusLabel}</span>
-                    <ChevronDown className="h-4 w-4 text-gray-500" />
-                  </button>
-
-                  {isStatusMenuOpen && (
-                    <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                      {statusOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            setStatusFilter(option.value);
-                            setIsStatusMenuOpen(false);
-                          }}
-                          className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors flex items-center justify-between ${
-                            statusFilter === option.value
-                              ? "bg-indigo-50 text-indigo-700"
-                              : "text-gray-700 hover:bg-gray-50"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          {statusFilter === option.value && (
-                            <Check className="h-4 w-4" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+            {activeTab === "all" && (
+              <div className="mb-8 flex flex-nowrap items-center justify-between gap-3">
+                <div className="min-w-0 flex-1 max-w-xl">
+                  <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                    <input
+                      type="text"
+                      placeholder="Search by name or email"
+                      value={allSearchTerm}
+                      onChange={(event) => setAllSearchTerm(event.target.value)}
+                      className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 pr-10 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                    />
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  </div>
                 </div>
 
-                <div ref={dateMenuRef} className="relative w-56">
-                  <button
-                    type="button"
-                    onClick={() => setIsDateMenuOpen((prev) => !prev)}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-3 text-left text-xs font-medium text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between gap-2"
-                  >
-                    <span className="truncate">{selectedDateLabel}</span>
-                    <div className="flex items-center gap-1">
-                      {addedDateFilter === "range" && (dateFrom || dateTo) && (
-                        <X
-                          className="h-4 w-4 text-gray-400 hover:text-gray-600"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDateFrom("");
-                            setDateTo("");
-                            setAddedDateFilter("all");
-                          }}
-                        />
-                      )}
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                    </div>
-                  </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  <div ref={statusMenuRef} className="relative w-44">
+                    <button
+                      type="button"
+                      onClick={() => setIsStatusMenuOpen((prev) => !prev)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between"
+                    >
+                      <span>{selectedStatusLabel}</span>
+                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                    </button>
 
-                  {isDateMenuOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-87.5 rounded-2xl border border-gray-200 bg-white p-3 shadow-xl">
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="date"
-                          value={dateFrom}
-                          onChange={(event) => {
-                            setDateFrom(event.target.value);
-                            setAddedDateFilter("range");
-                          }}
-                          className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                        />
-                        <input
-                          type="date"
-                          value={dateTo}
-                          onChange={(event) => {
-                            setDateTo(event.target.value);
-                            setAddedDateFilter("range");
-                          }}
-                          className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                        />
-                      </div>
-
-                      <div className="mt-3 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
-                        {dateOptions.map((option) => (
+                    {isStatusMenuOpen && (
+                      <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                        {statusOptions.map((option) => (
                           <button
                             key={option.value}
                             type="button"
                             onClick={() => {
-                              setAddedDateFilter(option.value);
-                              if (option.value !== "range") {
-                                setDateFrom("");
-                                setDateTo("");
-                              }
-                              if (option.value !== "range") {
-                                setIsDateMenuOpen(false);
-                              }
+                              setStatusFilter(option.value);
+                              setIsStatusMenuOpen(false);
                             }}
-                            className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
-                              addedDateFilter === option.value
+                            className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors flex items-center justify-between ${
+                              statusFilter === option.value
                                 ? "bg-indigo-50 text-indigo-700"
                                 : "text-gray-700 hover:bg-gray-50"
                             }`}
                           >
-                            {option.label}
+                            <span>{option.label}</span>
+                            {statusFilter === option.value && (
+                              <Check className="h-4 w-4" />
+                            )}
                           </button>
                         ))}
                       </div>
-                    </div>
+                    )}
+                  </div>
+
+                  <div ref={dateMenuRef} className="relative w-56">
+                    <button
+                      type="button"
+                      onClick={() => setIsDateMenuOpen((prev) => !prev)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">{selectedDateLabel}</span>
+                      <div className="flex items-center gap-1">
+                        {addedDateFilter === "range" &&
+                          (dateFrom || dateTo) && (
+                            <X
+                              className="h-4 w-4 text-gray-400 hover:text-gray-600"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDateFrom("");
+                                setDateTo("");
+                                setAddedDateFilter("all");
+                              }}
+                            />
+                          )}
+                        <Calendar className="h-4 w-4 text-gray-500" />
+                      </div>
+                    </button>
+
+                    {isDateMenuOpen && (
+                      <div className="absolute right-0 z-20 mt-2 w-87.5 rounded-2xl border border-gray-200 bg-white p-3 shadow-xl">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(event) => {
+                              setDateFrom(event.target.value);
+                              setAddedDateFilter("range");
+                            }}
+                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
+                          />
+                          <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(event) => {
+                              setDateTo(event.target.value);
+                              setAddedDateFilter("range");
+                            }}
+                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
+                          />
+                        </div>
+
+                        <div className="mt-3 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
+                          {dateOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setAddedDateFilter(option.value);
+                                if (option.value !== "range") {
+                                  setDateFrom("");
+                                  setDateTo("");
+                                }
+                                if (option.value !== "range") {
+                                  setIsDateMenuOpen(false);
+                                }
+                              }}
+                              className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
+                                addedDateFilter === option.value
+                                  ? "bg-indigo-50 text-indigo-700"
+                                  : "text-gray-700 hover:bg-gray-50"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {canManageContacts && (
+                    <button
+                      onClick={() => navigate("/add-contact")}
+                      className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98]"
+                    >
+                      <Plus className="h-4 w-4 stroke-[3px]" />
+                      Add new contact
+                    </button>
                   )}
                 </div>
-
-                {canManageContacts && activeTab === "all" && (
-                  <button
-                    onClick={() => navigate("/add-contact")}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-xs font-medium text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98]"
-                  >
-                    <Plus className="h-4 w-4 stroke-[3px]" />
-                    Add new contact
-                  </button>
-                )}
               </div>
-            </div>
+            )}
 
             {pageError && (
               <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700 animate-in fade-in slide-in-from-top-2">
@@ -714,6 +707,7 @@ function Contact() {
                 onUpdateGroup={handleUpdateGroup}
                 onEditContact={openEditModal}
                 onDeleteContact={handleDeleteContact}
+                onAddContact={() => navigate("/add-contact")}
               />
             )}
           </div>

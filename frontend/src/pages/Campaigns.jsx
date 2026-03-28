@@ -1,6 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Copy, Edit2, Mail, Plus, Search, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Edit2,
+  Mail,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -11,10 +20,23 @@ const Campaigns = () => {
   const canManageCampaigns = user?.role === "marketing";
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [campaigns, setCampaigns] = useState([]);
   const [pageError, setPageError] = useState("");
   const [pageMessage, setPageMessage] = useState("");
   const [sendingCampaignId, setSendingCampaignId] = useState(null);
+  const statusMenuRef = useRef(null);
+
+  const statusOptions = [
+    { value: "", label: "Every status" },
+    { value: "sent", label: "Sent" },
+    { value: "scheduled", label: "Scheduled" },
+    { value: "draft", label: "Draft" },
+  ];
+
+  const selectedStatusLabel =
+    statusOptions.find((option) => option.value === statusFilter)?.label ||
+    "Every status";
 
   const fetchCampaigns = async () => {
     try {
@@ -28,6 +50,20 @@ const Campaigns = () => {
 
   useEffect(() => {
     fetchCampaigns();
+  }, []);
+
+  useEffect(() => {
+    const handleDocumentClick = (event) => {
+      if (
+        statusMenuRef.current &&
+        !statusMenuRef.current.contains(event.target)
+      ) {
+        setIsStatusMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => document.removeEventListener("mousedown", handleDocumentClick);
   }, []);
 
   const handleDelete = async (id) => {
@@ -108,6 +144,31 @@ const Campaigns = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const getRecipientsLabel = (contactSegment) => {
+    if (!contactSegment || contactSegment === "all") {
+      return "All Contacts";
+    }
+
+    if (contactSegment === "active") {
+      return "Active Contacts";
+    }
+
+    if (contactSegment === "unsubscribed") {
+      return "Unsubscribed Contacts";
+    }
+
+    if (contactSegment.startsWith("group:")) {
+      const groupId = contactSegment.replace("group:", "");
+      return groupId ? `Group (${groupId})` : "Selected Group";
+    }
+
+    if (contactSegment.startsWith("ids:")) {
+      return "Selected Contacts";
+    }
+
+    return contactSegment;
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -125,37 +186,53 @@ const Campaigns = () => {
 
           <div className="flex items-center justify-between mb-8 gap-4">
             <div className="flex items-center gap-4 flex-1">
-              <div className="flex-1 max-w-sm relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                <input
-                  type="text"
-                  placeholder="Search campaigns..."
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all text-sm"
-                />
+              <div className="flex-1 max-w-sm">
+                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                  <input
+                    type="text"
+                    placeholder="Search campaigns..."
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 pr-10 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                  />
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 group cursor-pointer hover:bg-white px-3 py-2.5 rounded-lg transition-all border border-gray-200">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest group-hover:text-gray-600">
-                  Status:
-                </span>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-transparent border-none text-sm font-semibold text-gray-700 focus:outline-none focus:ring-0 cursor-pointer pr-6 appearance-none"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239CA3AF' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7' /%3E%3C/svg%3E")`,
-                    backgroundRepeat: "no-repeat",
-                    backgroundPosition: "right center",
-                    backgroundSize: "14px",
-                  }}
+              <div ref={statusMenuRef} className="relative w-44 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsStatusMenuOpen((prev) => !prev)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between"
                 >
-                  <option value="">Every status</option>
-                  <option value="sent">Sent</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="draft">Draft</option>
-                </select>
+                  <span>{selectedStatusLabel}</span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </button>
+
+                {isStatusMenuOpen && (
+                  <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                    {statusOptions.map((option) => (
+                      <button
+                        key={option.value || "all"}
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter(option.value);
+                          setIsStatusMenuOpen(false);
+                        }}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors flex items-center justify-between ${
+                          statusFilter === option.value
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        {statusFilter === option.value && (
+                          <Check className="h-4 w-4" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -214,7 +291,7 @@ const Campaigns = () => {
                     </h4>
                     <div className="mb-4 mt-0.5">
                       <p className="text-xs text-gray-400">
-                        Created at{" "}
+                        Created At:{" "}
                         <span className="text-gray-500 font-medium">
                           {new Date(campaign.created_at).toLocaleDateString(
                             "en-US",
@@ -224,16 +301,33 @@ const Campaigns = () => {
                       </p>
                       <div className="flex flex-col gap-0.5 mt-1">
                         <p className="text-xs text-gray-400">
-                          Created by{" "}
+                          Recipients Count:{" "}
+                          <span className="text-gray-500 font-medium">
+                            {campaign.recipients_count !== undefined
+                              ? campaign.recipients_count
+                              : "-"}
+                          </span>
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Recipients:{" "}
+                          <span className="text-gray-500 font-medium">
+                            {getRecipientsLabel(campaign.contact_segment)}
+                          </span>
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Created By:{" "}
                           <span className="text-gray-500 font-medium">
                             {campaign.created_by || "-"}
                           </span>
                         </p>
                         <p className="text-xs text-gray-400">
-                          Recipients{" "}
+                          Status:{" "}
                           <span className="text-gray-500 font-medium">
-                            {campaign.recipients_count !== undefined
-                              ? campaign.recipients_count
+                            {campaign.campaign_status
+                              ? campaign.campaign_status
+                                  .charAt(0)
+                                  .toUpperCase() +
+                                campaign.campaign_status.slice(1)
                               : "-"}
                           </span>
                         </p>

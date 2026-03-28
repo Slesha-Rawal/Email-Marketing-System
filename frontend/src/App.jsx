@@ -12,6 +12,7 @@ import SendEmails from "./pages/SendEmails.jsx";
 import CreateCampaign from "./pages/CreateCampaign.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import Settings from "./pages/Settings.jsx";
+import Profile from "./pages/Profile.jsx";
 import Overview from "./pages/Overview.jsx";
 import UsersPage from "./pages/Users.jsx";
 import UnsubscribeFeedback from "./pages/UnsubscribeFeedback.jsx";
@@ -60,9 +61,10 @@ function App() {
             <Route path="/send-emails" element={<SendEmails />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/email-logs" element={<EmailLogs />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/profile" element={<Profile />} />
             <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/settings" element={<Settings />} />
             </Route>
             <Route element={<ProtectedRoute allowedRoles={["marketing"]} />}>
               <Route path="/add-contact" element={<AddContact />} />

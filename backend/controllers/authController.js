@@ -3,6 +3,41 @@ import { queryDb } from "../utils/db.js";
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+const inferEmailProvider = (smtpHost = "") => {
+  const host = String(smtpHost).trim().toLowerCase();
+
+  if (host.includes("gmail")) {
+    return "gmail";
+  }
+
+  if (host.includes("office365") || host.includes("outlook")) {
+    return "outlook";
+  }
+
+  if (host.includes("zoho")) {
+    return "zoho";
+  }
+
+  return "custom";
+};
+
+const parseFromAddress = (rawFrom = "") => {
+  const source = String(rawFrom || "").trim();
+  if (!source) {
+    return { senderName: "", senderEmail: "" };
+  }
+
+  const match = source.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+  if (match) {
+    return {
+      senderName: (match[1] || "").trim(),
+      senderEmail: (match[2] || "").trim(),
+    };
+  }
+
+  return { senderName: "", senderEmail: source };
+};
+
 const formatUser = (user) => ({
   userId: user.user_id,
   email: user.user_email,
@@ -206,9 +241,42 @@ const changePassword = async (req, res) => {
   }
 };
 
+const getSmtpConfig = async (req, res) => {
+  if (String(req.user?.role || "").toLowerCase() !== "admin") {
+    return res.status(403).json({ message: "Admin access required" });
+  }
+
+  try {
+    const smtpHost = String(process.env.SMTP_HOST || "").trim();
+    const smtpPort = String(process.env.SMTP_PORT || "587").trim();
+    const smtpUser = String(process.env.SMTP_USER || "").trim();
+    const smtpPass = String(process.env.SMTP_PASS || "").trim();
+    const smtpFrom = String(process.env.SMTP_FROM || "").trim();
+
+    const { senderName, senderEmail } = parseFromAddress(smtpFrom);
+
+    return res.status(200).json({
+      emailProvider: inferEmailProvider(smtpHost),
+      smtpServer: smtpHost,
+      smtpPort,
+      usernameEmail: smtpUser,
+      password: smtpPass,
+      senderName,
+      senderEmail,
+      replyToEmail: "",
+    });
+  } catch (error) {
+    console.error("Fetch SMTP config error:", error);
+    return res
+      .status(500)
+      .json({ message: "Unable to load SMTP configuration" });
+  }
+};
+
 export default {
   login,
   me,
   updateProfile,
   changePassword,
+  getSmtpConfig,
 };
