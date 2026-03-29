@@ -261,6 +261,20 @@ const normalizeEmailBodyHtml = (body = "") => {
   return raw;
 };
 
+const applyTemplateVariables = (content = "", variables = {}) => {
+  let output = String(content || "");
+
+  Object.entries(variables).forEach(([key, value]) => {
+    const safeValue = String(value ?? "");
+    const escapedKey = String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Support only {{name}}-style merge tags with optional spaces.
+    const tokenPattern = new RegExp(`\\{\\{\\s*${escapedKey}\\s*\\}\\}`, "gi");
+    output = output.replace(tokenPattern, safeValue);
+  });
+
+  return output;
+};
+
 const isFullHtmlDocument = (html = "") =>
   /<!doctype\s+html|<html[\s>]/i.test(String(html || ""));
 
@@ -349,19 +363,28 @@ const setCampaignStatusDraft = async (campaignId) => {
   );
 };
 
-const executeCampaignSend = async (campaignId) => {
-  const smtpError = ensureSmtpConfigured();
-  if (smtpError) {
-    const error = new Error(smtpError);
-    error.statusCode = 500;
-    throw error;
+const normalizeSelectedContactIds = (selectedContactIds = []) => {
+  if (!Array.isArray(selectedContactIds)) {
+    return [];
   }
 
+  return [
+    ...new Set(
+      selectedContactIds
+        .map((id) => Number.parseInt(id, 10))
+        .filter((id) => !Number.isNaN(id)),
+    ),
+  ];
+};
+
+const getCampaignSendPayload = async (campaignId) => {
   const campaignRows = await queryDb(
-    `SELECT campaign_id, campaign_name, campaign_subject, campaign_body,
-            sender_name, sender_email, reply_to_email, contact_segment
-     FROM campaigns
-     WHERE campaign_id = ?
+    `SELECT c.campaign_id, c.campaign_name, c.campaign_subject, c.campaign_body,
+            c.template_id, c.sender_name, c.sender_email, c.reply_to_email, c.contact_segment,
+            t.template_body
+     FROM campaigns c
+     LEFT JOIN templates t ON t.template_id = c.template_id
+     WHERE c.campaign_id = ?
      LIMIT 1`,
     [campaignId],
   );
@@ -380,12 +403,63 @@ const executeCampaignSend = async (campaignId) => {
     throw error;
   }
 
-  const recipients = await getRecipientContacts(
-    campaign.contact_segment || "all",
+  const resolvedBody =
+    campaign.template_id && campaign.template_body != null
+      ? campaign.template_body
+      : campaign.campaign_body;
+
+  if (!String(resolvedBody || "").trim()) {
+    const error = new Error("Campaign body is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    ...campaign,
+    resolved_body: resolvedBody,
+  };
+};
+
+const getRecipientsForSend = async (
+  contactSegment,
+  selectedContactIds = [],
+) => {
+  const normalizedIds = normalizeSelectedContactIds(selectedContactIds);
+
+  if (normalizedIds.length > 0) {
+    return queryDb(
+      `SELECT contact_id, contact_name, contact_email
+       FROM contacts
+       WHERE contact_id IN (?) AND contact_status = 'active'
+       ORDER BY FIELD(contact_id, ?)`,
+      [normalizedIds, normalizedIds],
+    );
+  }
+
+  return getRecipientContacts(contactSegment || "all");
+};
+
+const executeCampaignSend = async (campaignId, selectedContactIds = []) => {
+  const smtpError = ensureSmtpConfigured();
+  if (smtpError) {
+    const error = new Error(smtpError);
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const campaign = await getCampaignSendPayload(campaignId);
+  const recipients = await getRecipientsForSend(
+    campaign.contact_segment,
+    selectedContactIds,
   );
 
   if (recipients.length === 0) {
-    const error = new Error("No recipients found for this campaign segment");
+    const selectedIds = normalizeSelectedContactIds(selectedContactIds);
+    const error = new Error(
+      selectedIds.length > 0
+        ? "No active recipients found in your selection"
+        : "No recipients found for this campaign segment",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -399,7 +473,10 @@ const executeCampaignSend = async (campaignId) => {
            total_recipients = ?,
            total_sent = 0,
            total_delivered = 0,
+           total_opened = 0,
+           total_clicked = 0,
            total_bounced = 0,
+           total_unsubscribed = 0,
            sent_date = NULL
        WHERE campaign_id = ?`,
       [recipients.length, campaignId],
@@ -423,8 +500,12 @@ const executeCampaignSend = async (campaignId) => {
        ON DUPLICATE KEY UPDATE
          email_status = VALUES(email_status),
          unique_tracking_id = VALUES(unique_tracking_id),
+         open_count = 0,
+         click_count = 0,
          sent_at = NULL,
          delivered_at = NULL,
+         opened_at = NULL,
+         clicked_at = NULL,
          bounced_at = NULL,
          updated_at = CURRENT_TIMESTAMP`,
       [campaignEmailRows],
@@ -439,11 +520,12 @@ const executeCampaignSend = async (campaignId) => {
 
     for (const contact of recipients) {
       const trackingId = trackingIdByContactId.get(contact.contact_id);
-      const unsubscribeUrl = `${trackingBaseUrl}/unsubscribe?email=${encodeURIComponent(contact.contact_email)}&campaign=${encodeURIComponent(campaignId)}`;
-      const personalizedBody = (campaign.campaign_body || "")
-        .replaceAll("{{name}}", contact.contact_name || "Subscriber")
-        .replaceAll("{{email}}", contact.contact_email)
-        .replaceAll("{{unsubscribe_url}}", unsubscribeUrl);
+      const unsubscribeUrl = `${trackingBaseUrl}/api/campaigns/unsubscribe?email=${encodeURIComponent(contact.contact_email)}&campaign=${encodeURIComponent(campaignId)}`;
+      const personalizedBody = applyTemplateVariables(campaign.resolved_body, {
+        name: contact.contact_name || "Subscriber",
+        email: contact.contact_email,
+        unsubscribe_url: unsubscribeUrl,
+      });
       const trackedBody = rewriteLinksForTracking(
         personalizedBody,
         trackingId,
@@ -481,6 +563,21 @@ const executeCampaignSend = async (campaignId) => {
            WHERE campaign_id = ? AND contact_id = ?`,
           [campaignId, contact.contact_id],
         );
+
+        await queryDb(
+          `INSERT INTO email_events (
+             campaign_email_id,
+             event_type,
+             event_data,
+             ip_address,
+             user_agent
+           )
+           SELECT campaign_email_id, 'sent', NULL, NULL, NULL
+           FROM campaign_emails
+           WHERE campaign_id = ? AND contact_id = ?
+           LIMIT 1`,
+          [campaignId, contact.contact_id],
+        );
       } catch (sendError) {
         failedCount += 1;
 
@@ -491,6 +588,25 @@ const executeCampaignSend = async (campaignId) => {
                updated_at = CURRENT_TIMESTAMP
            WHERE campaign_id = ? AND contact_id = ?`,
           [campaignId, contact.contact_id],
+        );
+
+        await queryDb(
+          `INSERT INTO email_events (
+             campaign_email_id,
+             event_type,
+             event_data,
+             ip_address,
+             user_agent
+           )
+           SELECT campaign_email_id, 'bounced', ?, NULL, NULL
+           FROM campaign_emails
+           WHERE campaign_id = ? AND contact_id = ?
+           LIMIT 1`,
+          [
+            JSON.stringify({ message: sendError.message || "Send failed" }),
+            campaignId,
+            contact.contact_id,
+          ],
         );
 
         console.error(
@@ -536,9 +652,40 @@ const getAllCampaigns = async (req, res) => {
               c.contact_segment, c.campaign_status, c.scheduled_date, c.sent_date,
               c.total_recipients, c.total_sent, c.total_delivered, c.total_opened,
               c.total_clicked, c.total_bounced, c.total_unsubscribed, c.created_at,
-              c.updated_at, t.template_name
+              c.updated_at, t.template_name,
+              u.user_name AS updated_by,
+              cg.group_name AS recipient_group_name,
+              CASE
+                WHEN c.contact_segment LIKE 'group:%' THEN (
+                  SELECT COUNT(*)
+                  FROM contact_group_members cgm
+                  INNER JOIN contacts ct ON ct.contact_id = cgm.contact_id
+                  WHERE cgm.group_id = CAST(REPLACE(c.contact_segment, 'group:', '') AS UNSIGNED)
+                    AND ct.contact_status = 'active'
+                )
+                WHEN c.contact_segment LIKE 'ids:%' THEN
+                  CASE
+                    WHEN REPLACE(c.contact_segment, 'ids:', '') = '' THEN 0
+                    ELSE 1 + LENGTH(REPLACE(c.contact_segment, 'ids:', '')) - LENGTH(REPLACE(REPLACE(c.contact_segment, 'ids:', ''), ',', ''))
+                  END
+                WHEN c.contact_segment = 'unsubscribed' THEN (
+                  SELECT COUNT(*)
+                  FROM contacts ct
+                  WHERE ct.contact_status = 'unsubscribed'
+                )
+                WHEN c.contact_segment = 'all' OR c.contact_segment = 'active' OR c.contact_segment IS NULL OR c.contact_segment = '' THEN (
+                  SELECT COUNT(*)
+                  FROM contacts ct
+                  WHERE ct.contact_status = 'active'
+                )
+                ELSE 0
+              END AS recipient_count_estimate
        FROM campaigns c
        LEFT JOIN templates t ON t.template_id = c.template_id
+       LEFT JOIN users u ON u.user_id = c.created_by
+       LEFT JOIN contact_groups cg
+         ON c.contact_segment LIKE 'group:%'
+        AND cg.group_id = CAST(REPLACE(c.contact_segment, 'group:', '') AS UNSIGNED)
        ORDER BY c.updated_at DESC`,
     );
 
@@ -546,6 +693,39 @@ const getAllCampaigns = async (req, res) => {
   } catch (error) {
     console.error("Error fetching campaigns:", error);
     return res.status(500).json({ message: "Failed to fetch campaigns" });
+  }
+};
+
+const getCampaignById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaignId = Number.parseInt(id, 10);
+
+    if (!campaignId || Number.isNaN(campaignId)) {
+      return res.status(400).json({ message: "Invalid campaign ID" });
+    }
+
+    const campaign = await queryDb(
+      `SELECT c.campaign_id, c.campaign_name, c.campaign_subject, c.campaign_body,
+              c.template_id, c.sender_name, c.sender_email, c.reply_to_email,
+              c.contact_segment, c.campaign_status, c.scheduled_date, c.sent_date,
+              c.total_recipients, c.total_sent, c.total_delivered, c.total_opened,
+              c.total_clicked, c.total_bounced, c.total_unsubscribed, c.created_at,
+              c.updated_at, t.template_name
+       FROM campaigns c
+       LEFT JOIN templates t ON t.template_id = c.template_id
+       WHERE c.campaign_id = ?`,
+      [campaignId],
+    );
+
+    if (!campaign || campaign.length === 0) {
+      return res.status(404).json({ message: "Campaign not found" });
+    }
+
+    return res.json(campaign[0]);
+  } catch (error) {
+    console.error("Error fetching campaign:", error);
+    return res.status(500).json({ message: "Failed to fetch campaign" });
   }
 };
 
@@ -735,13 +915,26 @@ const getEmailLogs = async (req, res) => {
            ),
            ''
          ) AS recipient_search_text,
-         COALESCE(c.total_recipients, COUNT(ce.campaign_email_id)) AS total_recipients,
-         COALESCE(SUM(CASE WHEN ce.email_status IN ('sent', 'delivered', 'opened', 'clicked') THEN 1 ELSE 0 END), 0) AS success_count,
-         COALESCE(SUM(CASE WHEN ce.email_status IN ('failed', 'bounced') THEN 1 ELSE 0 END), 0) AS fail_count
+         COALESCE(c.total_recipients, COUNT(DISTINCT ce.campaign_email_id)) AS total_recipients,
+         COALESCE(
+           COUNT(DISTINCT CASE
+             WHEN ce.email_status IN ('sent', 'delivered', 'opened', 'clicked')
+             THEN ce.campaign_email_id
+           END),
+           0
+         ) AS success_count,
+         COALESCE(
+           COUNT(DISTINCT CASE
+             WHEN ce.email_status IN ('failed', 'bounced') OR ee.event_type = 'bounced'
+             THEN ce.campaign_email_id
+           END),
+           0
+         ) AS fail_count
        FROM campaigns c
        LEFT JOIN templates t ON t.template_id = c.template_id
        LEFT JOIN users u ON u.user_id = c.created_by
        LEFT JOIN campaign_emails ce ON ce.campaign_id = c.campaign_id
+       LEFT JOIN email_events ee ON ee.campaign_email_id = ce.campaign_email_id
        LEFT JOIN contacts ct ON ct.contact_id = ce.contact_id
        WHERE ${whereClauses.join(" AND ")}
        GROUP BY
@@ -900,6 +1093,38 @@ const sendCampaign = async (req, res) => {
   }
 };
 
+const sendCampaignDraft = async (req, res) => {
+  const campaignId = Number.parseInt(req.params.id, 10);
+  const { selectedContactIds } = req.body;
+
+  if (!campaignId || Number.isNaN(campaignId)) {
+    return res.status(400).json({ message: "Invalid campaign id" });
+  }
+
+  if (!Array.isArray(selectedContactIds) || selectedContactIds.length === 0) {
+    return res
+      .status(400)
+      .json({ message: "Please select at least one recipient" });
+  }
+
+  try {
+    const totals = await executeCampaignSend(campaignId, selectedContactIds);
+
+    return res.json({
+      message: `Campaign sent to ${totals.sent} contact${totals.sent === 1 ? "" : "s"}`,
+      totals,
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
+    console.error("Error sending campaign:", error);
+
+    return res.status(500).json({ message: "Failed to send campaign" });
+  }
+};
+
 const trackOpen = async (req, res) => {
   const trackingId = req.params.trackingId?.trim();
 
@@ -915,7 +1140,17 @@ const trackOpen = async (req, res) => {
 
       if (rows.length > 0) {
         const trackedEmail = rows[0];
-        const isFirstOpen = !trackedEmail.opened_at;
+
+        // Check if already opened using email_events (source of truth for deduplication)
+        const openEventRows = await queryDb(
+          `SELECT event_id
+           FROM email_events
+           WHERE campaign_email_id = ? AND event_type = 'opened'
+           LIMIT 1`,
+          [trackedEmail.campaign_email_id],
+        );
+
+        const isFirstOpen = openEventRows.length === 0;
 
         await queryDb(
           `UPDATE campaign_emails
@@ -1070,7 +1305,7 @@ const unsubscribeRecipient = async (req, res) => {
 
       if (!Number.isNaN(campaignId) && campaignId > 0) {
         const campaignEmailRows = await queryDb(
-          `SELECT campaign_email_id, email_status
+          `SELECT campaign_email_id
            FROM campaign_emails
            WHERE campaign_id = ? AND contact_id = ?
            LIMIT 1`,
@@ -1079,13 +1314,19 @@ const unsubscribeRecipient = async (req, res) => {
 
         if (campaignEmailRows.length > 0) {
           const campaignEmail = campaignEmailRows[0];
-          const wasAlreadyUnsubscribed =
-            campaignEmail.email_status === "unsubscribed";
+          const unsubscribeEventRows = await queryDb(
+            `SELECT event_id
+             FROM email_events
+             WHERE campaign_email_id = ? AND event_type = 'unsubscribed'
+             LIMIT 1`,
+            [campaignEmail.campaign_email_id],
+          );
+
+          const wasAlreadyUnsubscribed = unsubscribeEventRows.length > 0;
 
           await queryDb(
             `UPDATE campaign_emails
-             SET email_status = 'unsubscribed',
-                 updated_at = CURRENT_TIMESTAMP
+             SET updated_at = CURRENT_TIMESTAMP
              WHERE campaign_email_id = ?`,
             [campaignEmail.campaign_email_id],
           );
@@ -1201,11 +1442,13 @@ export { startCampaignScheduler };
 
 export default {
   getAllCampaigns,
+  getCampaignById,
   getEmailLogs,
   createCampaign,
   updateCampaign,
   deleteCampaign,
   sendCampaign,
+  sendCampaignDraft,
   trackOpen,
   trackClick,
   unsubscribeRecipient,

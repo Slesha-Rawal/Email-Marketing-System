@@ -106,7 +106,7 @@ const Templates = () => {
                 />
                 <input
                   type="text"
-                  placeholder="Search templates by name, subject, or body"
+                  placeholder="Search Templates by name"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"

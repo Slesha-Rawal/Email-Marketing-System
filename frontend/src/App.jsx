@@ -9,6 +9,8 @@ import TemplatePreview from "./pages/TemplatePreview.jsx";
 import TemplateBuilder from "./pages/TemplateBuilder.jsx";
 import Campaigns from "./pages/Campaigns.jsx";
 import SendEmails from "./pages/SendEmails.jsx";
+import SendCampaign from "./pages/SendCampaign.jsx";
+import SendCampaignDetails from "./pages/SendCampaignDetails.jsx";
 import CreateCampaign from "./pages/CreateCampaign.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import Settings from "./pages/Settings.jsx";
@@ -59,6 +61,11 @@ function App() {
             />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/send-emails" element={<SendEmails />} />
+            <Route path="/send-campaign" element={<SendCampaign />} />
+            <Route
+              path="/send-campaign/:campaignId"
+              element={<SendCampaignDetails />}
+            />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/email-logs" element={<EmailLogs />} />
             <Route path="/profile" element={<Profile />} />

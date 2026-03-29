@@ -6,6 +6,8 @@ import api from "../lib/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const FIXED_SENDER_NAME = "HomeSchool.Asia";
+const MIN_PREVIEW_HEIGHT = 240;
+const MAX_PREVIEW_HEIGHT = 1400;
 
 const initialFormData = {
   campaign_name: "",
@@ -17,6 +19,11 @@ const initialFormData = {
   scheduled_date: "",
 };
 
+const hasUnsubscribeMarkup = (html = "") =>
+  /(\{\{\s*unsubscribe_url\s*\}\}|\/unsubscribe\b|>\s*unsubscribe\s*<)/i.test(
+    String(html || ""),
+  );
+
 const CreateCampaign = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,6 +33,9 @@ const CreateCampaign = () => {
   const [formData, setFormData] = useState(initialFormData);
   const [templates, setTemplates] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [previewRecipients, setPreviewRecipients] = useState([]);
+  const [showAllInPreview, setShowAllInPreview] = useState(false);
   const [error, setError] = useState("");
   const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
   const [isRecipientsDropdownOpen, setIsRecipientsDropdownOpen] =
@@ -34,17 +44,28 @@ const CreateCampaign = () => {
   const templateDropdownRef = useRef(null);
   const recipientsDropdownRef = useRef(null);
   const deliveryDropdownRef = useRef(null);
+  const previewViewportRef = useRef(null);
+  const previewIframeRef = useRef(null);
+  const [iframeHeight, setIframeHeight] = useState(500);
+  const [iframeScale, setIframeScale] = useState(1);
+  const [iframeContentHeight, setIframeContentHeight] = useState(500);
+  const [iframeContentWidth, setIframeContentWidth] = useState(700);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [templateResponse, groupResponse] = await Promise.all([
-          api.get("/templates"),
-          api.get("/contact-groups"),
-        ]);
+        const [templateResponse, groupResponse, contactsResponse] =
+          await Promise.all([
+            api.get("/templates"),
+            api.get("/contact-groups"),
+            api.get("/contacts"),
+          ]);
 
         setTemplates(templateResponse.data);
         setGroups(groupResponse.data);
+        setContacts(
+          Array.isArray(contactsResponse.data) ? contactsResponse.data : [],
+        );
       } catch (requestError) {
         setError(
           requestError.response?.data?.message || "Failed to load form data",
@@ -109,6 +130,84 @@ const CreateCampaign = () => {
         : "",
     });
   }, [editingCampaign]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPreviewRecipients = async () => {
+      const segment = String(formData.contact_segment || "all");
+
+      try {
+        if (segment === "all" || segment === "active" || !segment) {
+          if (!cancelled) {
+            setPreviewRecipients(
+              contacts.filter((contact) => contact.contact_status === "active"),
+            );
+          }
+          return;
+        }
+
+        if (segment === "unsubscribed") {
+          if (!cancelled) {
+            setPreviewRecipients(
+              contacts.filter(
+                (contact) => contact.contact_status === "unsubscribed",
+              ),
+            );
+          }
+          return;
+        }
+
+        if (segment.startsWith("ids:")) {
+          const ids = segment
+            .replace("ids:", "")
+            .split(",")
+            .map((id) => Number.parseInt(id.trim(), 10))
+            .filter((id) => !Number.isNaN(id));
+
+          if (!cancelled) {
+            setPreviewRecipients(
+              contacts.filter((contact) => ids.includes(contact.contact_id)),
+            );
+          }
+          return;
+        }
+
+        if (segment.startsWith("group:")) {
+          const groupId = Number.parseInt(segment.replace("group:", ""), 10);
+          if (!groupId || Number.isNaN(groupId)) {
+            if (!cancelled) {
+              setPreviewRecipients([]);
+            }
+            return;
+          }
+
+          const response = await api.get(`/contact-groups/${groupId}/contacts`);
+          if (!cancelled) {
+            setPreviewRecipients(
+              Array.isArray(response.data) ? response.data : [],
+            );
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setPreviewRecipients([]);
+        }
+      } catch {
+        if (!cancelled) {
+          setPreviewRecipients([]);
+        }
+      }
+    };
+
+    loadPreviewRecipients();
+    setShowAllInPreview(false);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.contact_segment, contacts]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -287,23 +386,193 @@ const CreateCampaign = () => {
   const previewSubject =
     selectedTemplate?.template_subject || formData.campaign_subject;
   const previewBody = selectedTemplate?.template_body || formData.campaign_body;
-  const previewHtml = `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <style>
-        body { margin: 0; font-family: sans-serif; font-size: 13px; color: #222; }
-        .subject { padding: 12px 14px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
-        .content { padding: 14px; }
-        img { max-width: 100%; height: auto; }
-      </style>
-    </head>
-    <body>
-      <div class="subject">${previewSubject || "Template Subject"}</div>
-      <div class="content">${previewBody || "<p style='color:#9ca3af;'>Select a template to preview content.</p>"}</div>
-    </body>
-  </html>`;
+
+  const updatePreviewLayout = () => {
+    const iframe = previewIframeRef.current;
+    const viewport = previewViewportRef.current;
+
+    if (!iframe || !viewport || !iframe.contentWindow) {
+      return;
+    }
+
+    try {
+      const doc = iframe.contentWindow.document;
+      const bodyHeight = Math.max(
+        doc.body?.scrollHeight || 0,
+        Math.ceil(doc.body?.getBoundingClientRect?.().height || 0),
+      );
+      const htmlHeight = Math.max(
+        doc.documentElement?.scrollHeight || 0,
+        Math.ceil(doc.documentElement?.getBoundingClientRect?.().height || 0),
+      );
+
+      let contentHeight = Math.max(bodyHeight, MIN_PREVIEW_HEIGHT);
+      if (htmlHeight > 0 && htmlHeight <= contentHeight * 1.25) {
+        contentHeight = Math.max(contentHeight, htmlHeight);
+      }
+
+      const contentWidth = Math.max(
+        doc.body?.scrollWidth || 0,
+        doc.documentElement?.scrollWidth || 0,
+      );
+
+      if (!contentHeight || !contentWidth) {
+        return;
+      }
+
+      const viewportWidth = viewport.clientWidth || contentWidth;
+      const nextScale = Math.min(1, viewportWidth / contentWidth);
+
+      setIframeScale(nextScale);
+      setIframeContentHeight(contentHeight);
+      setIframeContentWidth(contentWidth);
+      const scaledHeight = Math.max(
+        MIN_PREVIEW_HEIGHT,
+        Math.ceil(contentHeight * nextScale),
+      );
+      setIframeHeight(Math.min(MAX_PREVIEW_HEIGHT, scaledHeight));
+    } catch (layoutError) {
+      console.error("Failed to update campaign preview layout:", layoutError);
+    }
+  };
+
+  const handleIframeLoad = (event) => {
+    previewIframeRef.current = event.target;
+    setTimeout(updatePreviewLayout, 100);
+    setTimeout(updatePreviewLayout, 360);
+  };
+
+  useEffect(() => {
+    const timers = [80, 220, 420].map((delay) =>
+      setTimeout(updatePreviewLayout, delay),
+    );
+
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, [previewBody]);
+
+  useEffect(() => {
+    const handleResize = () => updatePreviewLayout();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const viewport = previewViewportRef.current;
+    if (!viewport || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(() => updatePreviewLayout());
+    });
+
+    observer.observe(viewport);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const applyPreviewMergeTags = (content = "") =>
+    String(content || "")
+      .replace(/\{\{\s*name\s*\}\}/gi, "John Doe")
+      .replace(/\{\{\s*email\s*\}\}/gi, "john.doe@example.com")
+      .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, "/unsubscribe");
+
+  const getPreviewHtml = () => {
+    const previewContent = applyPreviewMergeTags(previewBody);
+
+    const ensureViewportMeta = (html) => {
+      if (/<meta\s+name=["']viewport["']/i.test(html)) {
+        return html;
+      }
+
+      if (/<head[^>]*>/i.test(html)) {
+        return html.replace(
+          /<head[^>]*>/i,
+          (match) =>
+            `${match}\n<meta name="viewport" content="width=device-width, initial-scale=1" />`,
+        );
+      }
+
+      return html;
+    };
+
+    const unsubscribeFooter = `
+      <p style="margin:24px 0 0 0;text-align:center;font-size:12px;line-height:1.5;color:#9ca3af;font-family:sans-serif;">
+        You are receiving these emails because you are subscribed to our email updates.<br/>
+        <a href='/unsubscribe' style="color:#6366f1;text-decoration:underline;" target="_blank">Unsubscribe</a>
+      </p>
+    `;
+    const shouldAddFooter = !hasUnsubscribeMarkup(previewContent);
+
+    if (!previewContent) {
+      return `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                font-family: sans-serif;
+                font-size: 13px;
+                color: #222;
+              }
+            </style>
+          </head>
+          <body>${shouldAddFooter ? unsubscribeFooter : ""}</body>
+        </html>
+      `;
+    }
+
+    const trimmed = previewContent.trim().toLowerCase();
+    if (trimmed.startsWith("<!doctype") || trimmed.startsWith("<html")) {
+      if (/<\/body>/i.test(previewContent)) {
+        if (!shouldAddFooter) {
+          return ensureViewportMeta(previewContent);
+        }
+        return ensureViewportMeta(
+          previewContent.replace(/<\/body>/i, `${unsubscribeFooter}</body>`),
+        );
+      }
+
+      return ensureViewportMeta(
+        shouldAddFooter
+          ? `${previewContent}${unsubscribeFooter}`
+          : previewContent,
+      );
+    }
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: sans-serif;
+              font-size: 13px;
+              color: #222;
+            }
+            * { box-sizing: border-box; }
+            img { max-width: 100%; height: auto; }
+            a img { display: inline-block; vertical-align: middle; }
+            .preview-content * { font-size: 13px !important; }
+            .preview-content { font-size: 13px !important; }
+            a { color: #6366f1; }
+          </style>
+        </head>
+        <body>
+          <div class="preview-content">${previewContent}</div>
+          ${shouldAddFooter ? unsubscribeFooter : ""}
+        </body>
+      </html>
+    `;
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -565,7 +834,57 @@ const CreateCampaign = () => {
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 lg:p-4">
               <div className="mb-3 inline-flex items-center gap-2 text-sm text-gray-700 font-medium">
-                Template Preview
+                Preview
+              </div>
+              <div className="flex gap-2 mb-3 items-start border-t border-gray-200 pt-2">
+                <span className="text-xs font-medium text-gray-700 min-w-5">
+                  To:
+                </span>
+                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                  {previewRecipients.length > 0 ? (
+                    (() => {
+                      const displayedContacts = showAllInPreview
+                        ? previewRecipients
+                        : previewRecipients.slice(0, 5);
+                      const remainingCount = previewRecipients.length - 5;
+
+                      return (
+                        <>
+                          {displayedContacts.map((contact) => (
+                            <span
+                              key={contact.contact_id}
+                              className="text-[11px] font-medium text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md"
+                            >
+                              {contact.contact_email}
+                            </span>
+                          ))}
+                          {remainingCount > 0 && !showAllInPreview && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllInPreview(true)}
+                              className="text-[11px] font-medium text-indigo-600 px-1 py-1"
+                            >
+                              + {remainingCount} more
+                            </button>
+                          )}
+                          {showAllInPreview && previewRecipients.length > 5 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllInPreview(false)}
+                              className="text-[11px] font-medium text-indigo-600 px-1 py-1"
+                            >
+                              Show less
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">
+                      No recipients selected
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="mb-2 border-t border-gray-200 pt-2">
                 <p className="text-sm font-semibold text-gray-900 truncate">
@@ -573,11 +892,26 @@ const CreateCampaign = () => {
                 </p>
               </div>
               <div className="overflow-hidden mx-auto rounded-lg border border-gray-200">
-                <div className="bg-white relative overflow-hidden h-160">
+                <div
+                  ref={previewViewportRef}
+                  className="bg-white relative overflow-hidden"
+                  style={{ height: `${iframeHeight}px` }}
+                >
                   <iframe
                     title="Campaign Template Preview"
-                    srcDoc={previewHtml}
-                    className="w-full h-full border-none"
+                    ref={previewIframeRef}
+                    onLoad={handleIframeLoad}
+                    srcDoc={getPreviewHtml()}
+                    className="w-full border-none transition-all duration-300"
+                    style={{
+                      width: `${iframeContentWidth}px`,
+                      height: `${iframeContentHeight}px`,
+                      transform: `scale(${iframeScale})`,
+                      transformOrigin: "top left",
+                      fontSize: "13px",
+                      overflow: "hidden",
+                    }}
+                    scrolling="no"
                   />
                 </div>
               </div>

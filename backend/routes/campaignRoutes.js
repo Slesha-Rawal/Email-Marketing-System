@@ -9,6 +9,7 @@ router.get("/campaigns/track/click/:trackingId", campaignController.trackClick);
 router.get("/campaigns/unsubscribe", campaignController.unsubscribeRecipient);
 
 router.get("/campaigns", authenticate, campaignController.getAllCampaigns);
+router.get("/campaigns/:id", authenticate, campaignController.getCampaignById);
 router.get(
   "/email-logs",
   authenticate,
@@ -18,7 +19,7 @@ router.get(
 router.post(
   "/campaigns",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizeRoles("marketing", "admin"),
   campaignController.createCampaign,
 );
 router.put(
@@ -30,8 +31,14 @@ router.put(
 router.post(
   "/campaigns/:id/send",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizeRoles("marketing", "admin"),
   campaignController.sendCampaign,
+);
+router.post(
+  "/campaigns/:id/send-draft",
+  authenticate,
+  authorizeRoles("marketing", "admin"),
+  campaignController.sendCampaignDraft,
 );
 router.delete(
   "/campaigns/:id",

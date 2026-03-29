@@ -208,12 +208,12 @@ function Contact() {
   const handleAssignContacts = async () => {
     if (!selectedGroupId) {
       setGroupError("Select a group first");
-      return;
+      return false;
     }
 
     if (selectedContactIds.length === 0) {
       setGroupError("Select at least one contact to assign");
-      return;
+      return false;
     }
 
     try {
@@ -225,10 +225,12 @@ function Contact() {
       await fetchGroupContacts(selectedGroupId);
       await fetchGroups();
       setGroupError("");
+      return true;
     } catch (error) {
       setGroupError(
         error.response?.data?.error || "Failed to add contacts to group",
       );
+      return false;
     }
   };
 
@@ -707,7 +709,7 @@ function Contact() {
                 onUpdateGroup={handleUpdateGroup}
                 onEditContact={openEditModal}
                 onDeleteContact={handleDeleteContact}
-                onAddContact={() => navigate("/add-contact")}
+                onClearSelectedContacts={() => setSelectedContactIds([])}
               />
             )}
           </div>

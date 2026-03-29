@@ -11,6 +11,7 @@ import {
   LogOut,
   Send,
   History,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -63,78 +64,117 @@ function Sidebar() {
     );
   };
 
-  const navItems = [
-    { name: "Overview", path: "/", Icon: House },
-    { name: "Contacts", path: "/contact", Icon: Users },
-    { name: "Templates", path: "/templates", Icon: FileText },
-    { name: "Campaigns", path: "/campaigns", Icon: Mail },
-    { name: "Send Emails", path: "/send-emails", Icon: Send },
-    { name: "Email Logs", path: "/email-logs", Icon: History },
-    { name: "Analytics", path: "/analytics", Icon: BarChart3 },
-    { name: "My Profile", path: "/profile", Icon: User },
-    ...(user?.role === "admin"
-      ? [
-          { name: "Users", path: "/users", Icon: User },
-          { name: "Settings", path: "/settings", Icon: Settings },
-        ]
-      : []),
+  const navSections = [
+    {
+      title: "Main",
+      items: [
+        { name: "Overview", path: "/", Icon: House },
+        { name: "Contacts", path: "/contact", Icon: Users },
+        { name: "Templates", path: "/templates", Icon: FileText },
+        { name: "Campaigns", path: "/campaigns", Icon: Mail },
+        {
+          name: "Send Email",
+          path: "/send-emails",
+          Icon: Send,
+          subsectionLabel: "Email Sender",
+        },
+        {
+          name: "Send Campaign",
+          path: "/send-campaign",
+          Icon: Megaphone,
+          subsectionLabel: "Email Sender",
+        },
+        { name: "Email Logs", path: "/email-logs", Icon: History },
+        { name: "Analytics", path: "/analytics", Icon: BarChart3 },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        { name: "My Profile", path: "/profile", Icon: User },
+        ...(user?.role === "admin"
+          ? [
+              { name: "Users", path: "/users", Icon: User },
+              { name: "Settings", path: "/settings", Icon: Settings },
+            ]
+          : []),
+      ],
+    },
   ];
 
   return (
-    <aside className="w-64 bg-[#272739] h-screen fixed left-0 top-0 shadow-xl">
-      <div className="p-6">
-        <div className="mb-8 px-4">
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
-              <Mail className="text-white w-5 h-5" />
+    <aside className="w-64 h-screen fixed left-0 top-0 bg-[#272739] border-r border-white/10">
+      <div className="h-full flex flex-col">
+        <div className="px-4 pt-4 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Mail className="text-white w-4 h-4" />
             </div>
-            HSA Mail
-          </h1>
+            <div className="min-w-0">
+              <h1 className="text-[16px] font-semibold text-white leading-tight truncate">
+                HSA Mail
+              </h1>
+            </div>
+          </div>
         </div>
-        <nav className="space-y-1.5">
-          {navItems.map((item) => {
-            const Icon = item.Icon;
-            const active = isActivePath(item.path);
+
+        <nav className="flex-1 overflow-y-auto px-3 py-2.5 space-y-4 custom-scrollbar">
+          {navSections.map((section) => {
+            if (!section.items.length) {
+              return null;
+            }
+
             return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  active
-                    ? "text-white bg-indigo-600 shadow-lg shadow-indigo-900/40"
-                    : "text-indigo-100/70 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <Icon
-                  className={`w-4.5 h-4.5 ${active ? "text-white" : "text-indigo-100/50 group-hover:text-white"}`}
-                />
-                {item.name}
-              </Link>
+              <section key={section.title} className="space-y-1">
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-200/45">
+                  {section.title}
+                </p>
+
+                {section.items.map((item, idx) => {
+                  const Icon = item.Icon;
+                  const active = isActivePath(item.path);
+                  const showLabel =
+                    item.subsectionLabel &&
+                    (idx === 0 ||
+                      section.items[idx - 1].subsectionLabel !==
+                        item.subsectionLabel);
+
+                  return (
+                    <div key={item.path}>
+                      {showLabel && (
+                        <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-200/45">
+                          {item.subsectionLabel}
+                        </p>
+                      )}
+                      <Link
+                        to={item.path}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+                          active
+                            ? "text-white bg-indigo-600"
+                            : "text-indigo-100/75 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        <Icon
+                          className={`w-4 h-4 ${active ? "text-white" : "text-indigo-100/55"}`}
+                        />
+                        <span className="truncate">{item.name}</span>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </section>
             );
           })}
         </nav>
-      </div>
-      <div className="absolute bottom-6 left-6 right-6 pt-6 border-t border-white/5">
-        <div className="flex items-center justify-between gap-3 px-2 group/user">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="shrink-0 w-9 h-9 bg-indigo-500/20 rounded-full flex items-center justify-center border border-indigo-500/20">
-              <User className="text-indigo-300 w-5 h-5" />
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-sm font-semibold text-white truncate">
-                {user?.name || "User"}
-              </p>
-              <p className="text-[10px] text-indigo-300/60 uppercase font-bold tracking-wider truncate">
-                {user?.role || "Subscriber"}
-              </p>
-            </div>
-          </div>
+
+        <div className="px-3 py-3 border-t border-white/10">
           <button
+            type="button"
             onClick={logout}
-            title="Logout"
-            className="p-2 text-indigo-100/40 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
           >
-            <LogOut size={18} />
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
           </button>
         </div>
       </div>

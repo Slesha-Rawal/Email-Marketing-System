@@ -40,6 +40,7 @@ const TemplateBuilder = () => {
   const [iframeContentHeight, setIframeContentHeight] = useState(500);
   const [iframeContentWidth, setIframeContentWidth] = useState(700);
   const [showHtmlWarning, setShowHtmlWarning] = useState(false);
+  const [showVisualToHtmlWarning, setShowVisualToHtmlWarning] = useState(false);
   const previewViewportRef = useRef(null);
   const previewIframeRef = useRef(null);
 
@@ -105,6 +106,12 @@ const TemplateBuilder = () => {
     );
   };
 
+  const applyPreviewMergeTags = (content = "") =>
+    String(content || "")
+      .replace(/\{\{\s*name\s*\}\}/gi, "John Doe")
+      .replace(/\{\{\s*email\s*\}\}/gi, "john.doe@example.com")
+      .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, "/unsubscribe");
+
   const switchToRichEditor = () => {
     // If the current content is raw HTML, show a warning
     if (
@@ -131,7 +138,21 @@ const TemplateBuilder = () => {
   };
 
   const switchToHtmlEditor = () => {
+    if (editorMode === "rich") {
+      setShowVisualToHtmlWarning(true);
+      return;
+    }
+
     setEditorMode("html");
+  };
+
+  const handleVisualToHtmlContinue = () => {
+    setEditorMode("html");
+    setShowVisualToHtmlWarning(false);
+  };
+
+  const handleVisualToHtmlCancel = () => {
+    setShowVisualToHtmlWarning(false);
   };
 
   const handleIframeLoad = (e) => {
@@ -170,6 +191,8 @@ const TemplateBuilder = () => {
   }, []);
 
   const getPreviewHtml = () => {
+    const previewContent = applyPreviewMergeTags(emailContent);
+
     const ensureViewportMeta = (html) => {
       if (/<meta\s+name=["']viewport["']/i.test(html)) {
         return html;
@@ -192,9 +215,9 @@ const TemplateBuilder = () => {
         <a href='/unsubscribe' style="color:#6366f1;text-decoration:underline;" target="_blank">Unsubscribe</a>
       </p>
     `;
-    const shouldAddFooter = !hasUnsubscribeMarkup(emailContent);
+    const shouldAddFooter = !hasUnsubscribeMarkup(previewContent);
 
-    if (!emailContent) {
+    if (!previewContent) {
       return `
         <!DOCTYPE html>
         <html>
@@ -216,19 +239,21 @@ const TemplateBuilder = () => {
       `;
     }
 
-    const trimmed = emailContent.trim().toLowerCase();
+    const trimmed = previewContent.trim().toLowerCase();
     if (trimmed.startsWith("<!doctype") || trimmed.startsWith("<html")) {
-      if (/<\/body>/i.test(emailContent)) {
+      if (/<\/body>/i.test(previewContent)) {
         if (!shouldAddFooter) {
-          return ensureViewportMeta(emailContent);
+          return ensureViewportMeta(previewContent);
         }
         return ensureViewportMeta(
-          emailContent.replace(/<\/body>/i, `${unsubscribeFooter}</body>`),
+          previewContent.replace(/<\/body>/i, `${unsubscribeFooter}</body>`),
         );
       }
 
       return ensureViewportMeta(
-        shouldAddFooter ? `${emailContent}${unsubscribeFooter}` : emailContent,
+        shouldAddFooter
+          ? `${previewContent}${unsubscribeFooter}`
+          : previewContent,
       );
     }
 
@@ -255,7 +280,7 @@ const TemplateBuilder = () => {
           </style>
         </head>
         <body>
-          <div class="preview-content">${emailContent}</div>
+          <div class="preview-content">${previewContent}</div>
           ${shouldAddFooter ? unsubscribeFooter : ""}
         </body>
       </html>
@@ -341,6 +366,36 @@ const TemplateBuilder = () => {
               </button>
               <button
                 onClick={handleHtmlWarningContinue}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVisualToHtmlWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 max-w-md p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">
+                Switch to HTML Code?
+              </h3>
+              <p className="text-sm text-gray-600 mt-2">
+                If you switch from Visual Editor to HTML Code, the HTML editor
+                will be blank. Do you want to continue?
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={handleVisualToHtmlCancel}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVisualToHtmlContinue}
                 className="flex-1 px-4 py-2.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
               >
                 Continue

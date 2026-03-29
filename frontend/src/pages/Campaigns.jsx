@@ -14,12 +14,15 @@ import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
-const Campaigns = () => {
+const Campaigns = ({ mode = "all" }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canManageCampaigns = user?.role === "marketing";
+  const isDraftOnlyMode = mode === "draft-only";
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(
+    isDraftOnlyMode ? "draft" : "",
+  );
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [campaigns, setCampaigns] = useState([]);
   const [pageError, setPageError] = useState("");
@@ -37,6 +40,13 @@ const Campaigns = () => {
   const selectedStatusLabel =
     statusOptions.find((option) => option.value === statusFilter)?.label ||
     "Every status";
+
+  const pageTitle = isDraftOnlyMode ? "Send Campaign" : "Campaign";
+  const pageDescription = isDraftOnlyMode
+    ? "Review draft campaigns before sending."
+    : canManageCampaigns
+      ? "Create, schedule, and monitor your email marketing campaigns."
+      : "View and monitor existing campaign statuses.";
 
   const fetchCampaigns = async () => {
     try {
@@ -148,8 +158,9 @@ const Campaigns = () => {
       campaign.campaign_subject
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
-    const matchesStatus =
-      !statusFilter || campaign.campaign_status === statusFilter;
+    const matchesStatus = isDraftOnlyMode
+      ? campaign.campaign_status === "draft"
+      : !statusFilter || campaign.campaign_status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -167,8 +178,7 @@ const Campaigns = () => {
     }
 
     if (contactSegment.startsWith("group:")) {
-      const groupId = contactSegment.replace("group:", "");
-      return groupId ? `Group (${groupId})` : "Selected Group";
+      return "Selected Group";
     }
 
     if (contactSegment.startsWith("ids:")) {
@@ -178,6 +188,23 @@ const Campaigns = () => {
     return contactSegment;
   };
 
+  const getCampaignRecipientsName = (campaign) => {
+    if (campaign.contact_segment?.startsWith("group:")) {
+      return campaign.recipient_group_name || "Selected Group";
+    }
+
+    return getRecipientsLabel(campaign.contact_segment);
+  };
+
+  const getCampaignRecipientsCount = (campaign) => {
+    const count = Number(campaign.recipient_count_estimate);
+    if (Number.isFinite(count)) {
+      return count;
+    }
+
+    return Number(campaign.total_recipients) || 0;
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -185,12 +212,8 @@ const Campaigns = () => {
       <div className="flex-1 ml-64 flex flex-col">
         <div className="p-8 max-w-7xl mx-auto w-full">
           <header className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Campaign</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              {canManageCampaigns
-                ? "Create, schedule, and monitor your email marketing campaigns."
-                : "View and monitor existing campaign statuses."}
-            </p>
+            <h1 className="text-3xl font-bold text-gray-900">{pageTitle}</h1>
+            <p className="mt-1 text-sm text-gray-500">{pageDescription}</p>
           </header>
 
           <div className="flex items-center justify-between mb-8 gap-4">
@@ -208,41 +231,43 @@ const Campaigns = () => {
                 </div>
               </div>
 
-              <div ref={statusMenuRef} className="relative w-44 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsStatusMenuOpen((prev) => !prev)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between"
-                >
-                  <span>{selectedStatusLabel}</span>
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                </button>
+              {!isDraftOnlyMode && (
+                <div ref={statusMenuRef} className="relative w-44 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsStatusMenuOpen((prev) => !prev)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between"
+                  >
+                    <span>{selectedStatusLabel}</span>
+                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                  </button>
 
-                {isStatusMenuOpen && (
-                  <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                    {statusOptions.map((option) => (
-                      <button
-                        key={option.value || "all"}
-                        type="button"
-                        onClick={() => {
-                          setStatusFilter(option.value);
-                          setIsStatusMenuOpen(false);
-                        }}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors flex items-center justify-between ${
-                          statusFilter === option.value
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        <span>{option.label}</span>
-                        {statusFilter === option.value && (
-                          <Check className="h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  {isStatusMenuOpen && (
+                    <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                      {statusOptions.map((option) => (
+                        <button
+                          key={option.value || "all"}
+                          type="button"
+                          onClick={() => {
+                            setStatusFilter(option.value);
+                            setIsStatusMenuOpen(false);
+                          }}
+                          className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors flex items-center justify-between ${
+                            statusFilter === option.value
+                              ? "bg-indigo-50 text-indigo-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          {statusFilter === option.value && (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {canManageCampaigns && (
@@ -273,11 +298,16 @@ const Campaigns = () => {
               filteredCampaigns.map((campaign, index) => (
                 <article
                   key={campaign.campaign_id}
-                  className={`group flex items-start p-6 hover:bg-gray-50/50 transition-all relative ${
+                  onClick={() => {
+                    if (isDraftOnlyMode) {
+                      navigate(`/send-campaign/${campaign.campaign_id}`);
+                    }
+                  }}
+                  className={`group flex items-start p-6 transition-all relative ${
                     index !== filteredCampaigns.length - 1
                       ? "border-b border-gray-100"
                       : ""
-                  }`}
+                  } ${isDraftOnlyMode ? "cursor-pointer hover:bg-indigo-50/30" : "hover:bg-gray-50/50"}`}
                 >
                   <div className="w-36 h-36 bg-gray-50 border border-gray-100 shrink-0 overflow-hidden relative group/preview p-3">
                     <iframe
@@ -298,27 +328,73 @@ const Campaigns = () => {
                     <h4 className="text-lg font-semibold text-gray-900 truncate mb-1">
                       {campaign.campaign_name}
                     </h4>
-                    <div className="mb-4 mt-0.5">
+                    <div className="mb-4 mt-0.5 space-y-1">
                       <p className="text-xs text-gray-400">
-                        Created At:{" "}
+                        Last updated at:{" "}
                         <span className="text-gray-500 font-medium">
-                          {new Date(campaign.created_at).toLocaleDateString(
+                          {new Date(campaign.updated_at).toLocaleDateString(
                             "en-US",
                             { day: "numeric", month: "short", year: "numeric" },
                           )}
                         </span>
                       </p>
-                      <div className="flex flex-col gap-0.5 mt-1">
-                        <p className="text-xs text-gray-400">
-                          Recipients:{" "}
-                          <span className="text-gray-500 font-medium">
-                            {getRecipientsLabel(campaign.contact_segment)}
-                          </span>
-                        </p>
-                      </div>
+                      <p className="text-xs text-gray-400">
+                        Last updated by:{" "}
+                        <span className="text-gray-500 font-medium">
+                          {campaign.updated_by || "-"}
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Recipients:{" "}
+                        <span className="text-gray-500 font-medium">
+                          {getCampaignRecipientsName(campaign)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Recipients no:{" "}
+                        <span className="text-gray-500 font-medium">
+                          {getCampaignRecipientsCount(campaign)}
+                        </span>
+                      </p>
                     </div>
+                  </div>
+
+                  {/* Right Column: icons then status */}
+                  <div className="ml-4 self-stretch flex flex-col items-end justify-between py-1.5">
+                    {!isDraftOnlyMode && (
+                      <div className="flex items-center gap-0.5 opacity-100 transition-opacity">
+                        <button
+                          onClick={() =>
+                            navigate("/create-campaign", {
+                              state: { campaign },
+                            })
+                          }
+                          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+
+                        <button
+                          onClick={() => handleDuplicate(campaign)}
+                          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                          title="Duplicate"
+                        >
+                          <Copy size={16} />
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(campaign.campaign_id)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          title="Delete"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+
                     <span
-                      className={`mt-2 px-3 py-1.5 rounded-full text-xs font-bold inline-block h-fit w-fit ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold inline-block h-fit w-fit ${
                         campaign.campaign_status === "sent"
                           ? "bg-emerald-100 text-emerald-700"
                           : campaign.campaign_status === "scheduled"
@@ -329,35 +405,6 @@ const Campaigns = () => {
                       {campaign.campaign_status.charAt(0).toUpperCase() +
                         campaign.campaign_status.slice(1)}
                     </span>
-                  </div>
-
-                  {/* Top-Right Action Icons */}
-                  <div className="absolute top-4 right-4 flex items-center gap-0.5 opacity-100 transition-opacity">
-                    <button
-                      onClick={() =>
-                        navigate("/create-campaign", { state: { campaign } })
-                      }
-                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                      title="Edit"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-
-                    <button
-                      onClick={() => handleDuplicate(campaign)}
-                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                      title="Duplicate"
-                    >
-                      <Copy size={16} />
-                    </button>
-
-                    <button
-                      onClick={() => handleDelete(campaign.campaign_id)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                      title="Delete"
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
                 </article>
               ))

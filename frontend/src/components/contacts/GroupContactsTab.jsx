@@ -33,7 +33,7 @@ function GroupContactsTab({
   onUpdateGroup,
   onEditContact,
   onDeleteContact,
-  onAddContact,
+  onClearSelectedContacts,
 }) {
   const tableRef = useRef(null);
   const [viewMode, setViewMode] = useState("list"); // list or details
@@ -51,8 +51,26 @@ function GroupContactsTab({
   const [groupListSearchTerm, setGroupListSearchTerm] = useState("");
   const [isGroupStatusMenuOpen, setIsGroupStatusMenuOpen] = useState(false);
   const [isGroupDateMenuOpen, setIsGroupDateMenuOpen] = useState(false);
+  const [showQuickAddDialog, setShowQuickAddDialog] = useState(false);
+  const [quickAddSearchQuery, setQuickAddSearchQuery] = useState("");
+  const [isQuickAddDropdownOpen, setIsQuickAddDropdownOpen] = useState(false);
+  const [quickAddError, setQuickAddError] = useState("");
   const groupStatusMenuRef = useRef(null);
   const groupDateMenuRef = useRef(null);
+  const quickAddDropdownRef = useRef(null);
+
+  const filteredAvailableContacts = useMemo(() => {
+    if (!quickAddSearchQuery.trim()) {
+      return availableContacts;
+    }
+
+    const query = quickAddSearchQuery.toLowerCase();
+    return availableContacts.filter(
+      (contact) =>
+        (contact.contact_name || "").toLowerCase().includes(query) ||
+        (contact.contact_email || "").toLowerCase().includes(query),
+    );
+  }, [availableContacts, quickAddSearchQuery]);
 
   const normalizedGroupSearchTerm = groupListSearchTerm.trim().toLowerCase();
 
@@ -377,11 +395,19 @@ function GroupContactsTab({
       ) {
         setIsGroupDateMenuOpen(false);
       }
+
+      if (
+        isQuickAddDropdownOpen &&
+        quickAddDropdownRef.current &&
+        !quickAddDropdownRef.current.contains(event.target)
+      ) {
+        setIsQuickAddDropdownOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [isGroupStatusMenuOpen, isGroupDateMenuOpen]);
+  }, [isGroupStatusMenuOpen, isGroupDateMenuOpen, isQuickAddDropdownOpen]);
 
   const visibleGroups = groups.filter((group) => {
     if (!normalizedGroupSearchTerm) {
@@ -445,6 +471,28 @@ function GroupContactsTab({
     const deleted = await onDeleteGroup();
     if (deleted) {
       setViewMode("list");
+    }
+  };
+
+  const closeQuickAddDialog = () => {
+    setShowQuickAddDialog(false);
+    setQuickAddSearchQuery("");
+    setQuickAddError("");
+    setIsQuickAddDropdownOpen(false);
+    onClearSelectedContacts?.();
+  };
+
+  const handleQuickAddContacts = async () => {
+    if (selectedContactIds.length === 0) {
+      setQuickAddError("Select at least one contact to add");
+      return;
+    }
+
+    const assigned = await onAssignContacts();
+    if (assigned) {
+      closeQuickAddDialog();
+    } else {
+      setQuickAddError("Unable to add contacts. Please try again.");
     }
   };
 
@@ -624,11 +672,16 @@ function GroupContactsTab({
 
             {canManageContacts && (
               <button
-                onClick={onAddContact}
+                onClick={() => {
+                  setQuickAddError("");
+                  setQuickAddSearchQuery("");
+                  setIsQuickAddDropdownOpen(true);
+                  setShowQuickAddDialog(true);
+                }}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4 stroke-[3px]" />
-                Add new contact
+                Add to Group
               </button>
             )}
           </div>
@@ -753,6 +806,179 @@ function GroupContactsTab({
             onClose={() => setShowEditDialog(false)}
             onSubmit={handleUpdateClick}
           />
+        )}
+
+        {showQuickAddDialog && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-xl rounded-2xl border border-gray-100 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    Quick Add Contacts
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Select existing contacts to add to{" "}
+                    {selectedGroup.group_name}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeQuickAddDialog}
+                  className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {(quickAddError || groupError) && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {quickAddError || groupError}
+                </div>
+              )}
+
+              <div className="relative" ref={quickAddDropdownRef}>
+                <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                  Select Contacts
+                </label>
+                <div
+                  className="min-h-11 relative rounded-lg border border-gray-200 bg-white px-2.5 py-2 pr-10 flex flex-wrap items-center gap-2 transition-all focus-within:border-indigo-300"
+                  onClick={() => {
+                    setIsQuickAddDropdownOpen(true);
+                    document
+                      .getElementById("quick-add-contact-search-input")
+                      ?.focus();
+                  }}
+                >
+                  <div className="flex items-center text-gray-400">
+                    <Users className="h-4 w-4" />
+                  </div>
+
+                  {selectedContactIds.map((id) => {
+                    const contact = availableContacts.find(
+                      (item) => item.contact_id === id,
+                    );
+                    if (!contact) return null;
+
+                    return (
+                      <div
+                        key={contact.contact_id}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-indigo-100 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700"
+                      >
+                        <span className="max-w-35 truncate">
+                          {contact.contact_email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onToggleSelectedContact(contact.contact_id);
+                          }}
+                          className="text-indigo-400 hover:text-indigo-700"
+                        >
+                          x
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <input
+                    id="quick-add-contact-search-input"
+                    type="text"
+                    placeholder={
+                      selectedContactIds.length === 0
+                        ? "Type name or email address..."
+                        : ""
+                    }
+                    value={quickAddSearchQuery}
+                    onFocus={() => setIsQuickAddDropdownOpen(true)}
+                    onChange={(event) => {
+                      setQuickAddSearchQuery(event.target.value);
+                      setQuickAddError("");
+                      setIsQuickAddDropdownOpen(true);
+                    }}
+                    className="flex-1 min-w-30 h-7 bg-transparent border-none p-0 text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none"
+                  />
+
+                  {selectedContactIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onClearSelectedContacts?.();
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                      title="Clear all selected contacts"
+                    >
+                      x
+                    </button>
+                  )}
+                </div>
+
+                {isQuickAddDropdownOpen && (
+                  <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="max-h-64 overflow-y-auto p-2">
+                      {filteredAvailableContacts.length > 0 ? (
+                        filteredAvailableContacts.map((contact) => {
+                          const isSelected = selectedContactIds.includes(
+                            contact.contact_id,
+                          );
+                          return (
+                            <button
+                              key={contact.contact_id}
+                              type="button"
+                              onClick={() => {
+                                onToggleSelectedContact(contact.contact_id);
+                                setQuickAddSearchQuery("");
+                                setQuickAddError("");
+                                setIsQuickAddDropdownOpen(true);
+                              }}
+                              className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm ${
+                                isSelected
+                                  ? "bg-indigo-50 text-indigo-700"
+                                  : "text-gray-700 hover:bg-gray-50"
+                              }`}
+                            >
+                              <div>
+                                <p className="font-medium">
+                                  {contact.contact_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {contact.contact_email}
+                                </p>
+                              </div>
+                              {isSelected && <Check className="h-4 w-4" />}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-lg px-3 py-6 text-center text-sm text-gray-500">
+                          No matching contacts found.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeQuickAddDialog}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleQuickAddContacts}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add to Group
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
