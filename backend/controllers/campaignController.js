@@ -139,6 +139,15 @@ const getTrackingBaseUrl = () => {
   return rawBaseUrl.replace(/\/+$/, "");
 };
 
+const getFrontendBaseUrl = () => {
+  const rawBaseUrl =
+    process.env.FRONTEND_BASE_URL ||
+    process.env.WEB_BASE_URL ||
+    "http://localhost:5174";
+
+  return rawBaseUrl.replace(/\/+$/, "");
+};
+
 const isTrackableHttpUrl = (value = "") => {
   const trimmedValue = String(value || "").trim();
   return /^https?:\/\//i.test(trimmedValue);
@@ -252,6 +261,9 @@ const normalizeEmailBodyHtml = (body = "") => {
   return raw;
 };
 
+const isFullHtmlDocument = (html = "") =>
+  /<!doctype\s+html|<html[\s>]/i.test(String(html || ""));
+
 const ensureUnsubscribeFooter = (html = "", unsubscribeUrl = "") => {
   const body = String(html || "");
   const trimmedBody = body.trim();
@@ -273,62 +285,45 @@ const ensureUnsubscribeFooter = (html = "", unsubscribeUrl = "") => {
     </p>
   `;
 
+  if (isFullHtmlDocument(trimmedBody)) {
+    if (/<\/body>/i.test(trimmedBody)) {
+      return trimmedBody.replace(/<\/body>/i, `${footerMarkup}</body>`);
+    }
+
+    if (/<\/html>/i.test(trimmedBody)) {
+      return trimmedBody.replace(
+        /<\/html>/i,
+        `<body>${footerMarkup}</body></html>`,
+      );
+    }
+
+    return `${trimmedBody}${footerMarkup}`;
+  }
+
   return `${trimmedBody}${footerMarkup}`;
 };
 
 const toEmailHtmlDocument = (bodyHtml, subject, trackingPixelUrl = "") => {
   let styledBody = normalizeEmailBodyHtml(bodyHtml);
 
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "p",
-    "margin:0 0 16px 0;line-height:1.6;font-size:16px;color:#374151;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "h1",
-    "margin:0 0 16px 0;line-height:1.2;font-size:28px;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "h2",
-    "margin:0 0 16px 0;line-height:1.3;font-size:22px;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "ul",
-    "margin:0 0 16px 0;padding-left:24px;color:#374151;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "ol",
-    "margin:0 0 16px 0;padding-left:24px;color:#374151;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "li",
-    "margin:0 0 8px 0;line-height:1.6;font-size:16px;color:#374151;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "blockquote",
-    "margin:0 0 16px 0;padding-left:20px;border-left:4px solid #e5e7eb;color:#6b7280;font-style:italic;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "a",
-    "color:#4f46e5;text-decoration:underline;",
-  );
-  styledBody = addInlineStyleToTag(
-    styledBody,
-    "img",
-    "display:block;max-width:100%;height:auto;border-radius:8px;margin:20px auto;",
-  );
+  const openPixelMarkup = trackingPixelUrl
+    ? `<img src="${sanitizeAttribute(trackingPixelUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;opacity:0;border:0;"/>`
+    : "";
+
+  // If template is already a complete HTML document, preserve it as-is so
+  // email-client-specific CSS/layout stays intact. Only inject tracking pixel.
+  if (isFullHtmlDocument(styledBody)) {
+    if (openPixelMarkup) {
+      if (/<\/body>/i.test(styledBody)) {
+        return styledBody.replace(/<\/body>/i, `${openPixelMarkup}</body>`);
+      }
+      return `${styledBody}${openPixelMarkup}`;
+    }
+
+    return styledBody;
+  }
 
   const safeSubject = sanitizeAttribute(subject || "Campaign update");
-  const openPixelMarkup = trackingPixelUrl
-    ? `<img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;opacity:0;border:0;"/>`
-    : "";
 
   return `
 <!doctype html>
@@ -337,41 +332,10 @@ const toEmailHtmlDocument = (bodyHtml, subject, trackingPixelUrl = "") => {
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${safeSubject}</title>
-    <!--[if mso]>
-    <noscript>
-      <xml>
-        <o:OfficeDocumentSettings>
-          <o:PixelsPerInch>96</o:PixelsPerInch>
-        </o:OfficeDocumentSettings>
-      </xml>
-    </noscript>
-    <![endif]-->
   </head>
-  <body style="margin:0;padding:40px 10px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;">
-      <tr>
-        <td align="center">
-          <!--[if mso]>
-          <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0">
-            <tr>
-              <td>
-          <![endif]-->
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;border-collapse:separate;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1);">
-            <tr>
-              <td style="padding:40px 48px;">
-                ${styledBody}
-                ${openPixelMarkup}
-              </td>
-            </tr>
-          </table>
-          <!--[if mso]>
-              </td>
-            </tr>
-          </table>
-          <![endif]-->
-        </td>
-      </tr>
-    </table>
+  <body style="margin:0;padding:0;">
+    ${styledBody}
+    ${openPixelMarkup}
   </body>
 </html>`.trim();
 };
@@ -605,20 +569,6 @@ const getEmailLogs = async (req, res) => {
       queryParams.push(templateId);
     }
 
-    if (recipient) {
-      whereClauses.push(
-        `EXISTS (
-           SELECT 1
-           FROM campaign_emails ce_filter
-           INNER JOIN contacts ct_filter
-             ON ct_filter.contact_id = ce_filter.contact_id
-           WHERE ce_filter.campaign_id = c.campaign_id
-             AND ct_filter.contact_email LIKE ?
-         )`,
-      );
-      queryParams.push(`%${recipient}%`);
-    }
-
     if (date) {
       whereClauses.push("DATE(COALESCE(c.sent_date, c.updated_at)) = ?");
       queryParams.push(date);
@@ -631,6 +581,160 @@ const getEmailLogs = async (req, res) => {
          t.template_name,
          u.user_name AS sent_by,
          c.campaign_status AS status,
+         COALESCE(
+           NULLIF(
+             GROUP_CONCAT(
+               DISTINCT COALESCE(NULLIF(TRIM(ct.contact_name), ''), ct.contact_email)
+               ORDER BY COALESCE(NULLIF(TRIM(ct.contact_name), ''), ct.contact_email)
+               SEPARATOR '||'
+             ),
+             ''
+           ),
+           (
+             CASE
+               WHEN c.contact_segment LIKE 'ids:%' THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT COALESCE(NULLIF(TRIM(c_ids.contact_name), ''), c_ids.contact_email)
+                   ORDER BY COALESCE(NULLIF(TRIM(c_ids.contact_name), ''), c_ids.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_ids
+                 WHERE FIND_IN_SET(
+                   c_ids.contact_id,
+                   REPLACE(c.contact_segment, 'ids:', '')
+                 )
+               )
+               WHEN c.contact_segment LIKE 'group:%' THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT COALESCE(NULLIF(TRIM(c_group.contact_name), ''), c_group.contact_email)
+                   ORDER BY COALESCE(NULLIF(TRIM(c_group.contact_name), ''), c_group.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contact_group_members cgm_group
+                 INNER JOIN contacts c_group
+                   ON c_group.contact_id = cgm_group.contact_id
+                 WHERE cgm_group.group_id = CAST(REPLACE(c.contact_segment, 'group:', '') AS UNSIGNED)
+               )
+               WHEN c.contact_segment = 'unsubscribed'
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM campaign_emails ce_exists_unsub
+                      WHERE ce_exists_unsub.campaign_id = c.campaign_id
+                    ) THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT COALESCE(NULLIF(TRIM(c_unsub.contact_name), ''), c_unsub.contact_email)
+                   ORDER BY COALESCE(NULLIF(TRIM(c_unsub.contact_name), ''), c_unsub.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_unsub
+                 WHERE c_unsub.contact_status = 'unsubscribed'
+               )
+               WHEN (c.contact_segment = 'all' OR c.contact_segment = 'active' OR c.contact_segment IS NULL OR c.contact_segment = '')
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM campaign_emails ce_exists_active
+                      WHERE ce_exists_active.campaign_id = c.campaign_id
+                    ) THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT COALESCE(NULLIF(TRIM(c_active.contact_name), ''), c_active.contact_email)
+                   ORDER BY COALESCE(NULLIF(TRIM(c_active.contact_name), ''), c_active.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_active
+                 WHERE c_active.contact_status = 'active'
+               )
+               ELSE NULL
+             END
+           ),
+           ''
+         ) AS recipient_names,
+         COALESCE(
+           NULLIF(
+             GROUP_CONCAT(
+               DISTINCT CONCAT_WS(
+                 ' ',
+                 COALESCE(NULLIF(TRIM(ct.contact_name), ''), ''),
+                 COALESCE(ct.contact_email, '')
+               )
+               ORDER BY COALESCE(NULLIF(TRIM(ct.contact_name), ''), ct.contact_email)
+               SEPARATOR '||'
+             ),
+             ''
+           ),
+           (
+             CASE
+               WHEN c.contact_segment LIKE 'ids:%' THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT CONCAT_WS(
+                     ' ',
+                     COALESCE(NULLIF(TRIM(c_ids.contact_name), ''), ''),
+                     COALESCE(c_ids.contact_email, '')
+                   )
+                   ORDER BY COALESCE(NULLIF(TRIM(c_ids.contact_name), ''), c_ids.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_ids
+                 WHERE FIND_IN_SET(
+                   c_ids.contact_id,
+                   REPLACE(c.contact_segment, 'ids:', '')
+                 )
+               )
+               WHEN c.contact_segment LIKE 'group:%' THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT CONCAT_WS(
+                     ' ',
+                     COALESCE(NULLIF(TRIM(c_group.contact_name), ''), ''),
+                     COALESCE(c_group.contact_email, '')
+                   )
+                   ORDER BY COALESCE(NULLIF(TRIM(c_group.contact_name), ''), c_group.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contact_group_members cgm_group
+                 INNER JOIN contacts c_group
+                   ON c_group.contact_id = cgm_group.contact_id
+                 WHERE cgm_group.group_id = CAST(REPLACE(c.contact_segment, 'group:', '') AS UNSIGNED)
+               )
+               WHEN c.contact_segment = 'unsubscribed'
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM campaign_emails ce_exists_unsub_filter
+                      WHERE ce_exists_unsub_filter.campaign_id = c.campaign_id
+                    ) THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT CONCAT_WS(
+                     ' ',
+                     COALESCE(NULLIF(TRIM(c_unsub.contact_name), ''), ''),
+                     COALESCE(c_unsub.contact_email, '')
+                   )
+                   ORDER BY COALESCE(NULLIF(TRIM(c_unsub.contact_name), ''), c_unsub.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_unsub
+                 WHERE c_unsub.contact_status = 'unsubscribed'
+               )
+               WHEN (c.contact_segment = 'all' OR c.contact_segment = 'active' OR c.contact_segment IS NULL OR c.contact_segment = '')
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM campaign_emails ce_exists_active_filter
+                      WHERE ce_exists_active_filter.campaign_id = c.campaign_id
+                    ) THEN (
+                 SELECT GROUP_CONCAT(
+                   DISTINCT CONCAT_WS(
+                     ' ',
+                     COALESCE(NULLIF(TRIM(c_active.contact_name), ''), ''),
+                     COALESCE(c_active.contact_email, '')
+                   )
+                   ORDER BY COALESCE(NULLIF(TRIM(c_active.contact_name), ''), c_active.contact_email)
+                   SEPARATOR '||'
+                 )
+                 FROM contacts c_active
+                 WHERE c_active.contact_status = 'active'
+               )
+               ELSE NULL
+             END
+           ),
+           ''
+         ) AS recipient_search_text,
          COALESCE(c.total_recipients, COUNT(ce.campaign_email_id)) AS total_recipients,
          COALESCE(SUM(CASE WHEN ce.email_status IN ('sent', 'delivered', 'opened', 'clicked') THEN 1 ELSE 0 END), 0) AS success_count,
          COALESCE(SUM(CASE WHEN ce.email_status IN ('failed', 'bounced') THEN 1 ELSE 0 END), 0) AS fail_count
@@ -638,6 +742,7 @@ const getEmailLogs = async (req, res) => {
        LEFT JOIN templates t ON t.template_id = c.template_id
        LEFT JOIN users u ON u.user_id = c.created_by
        LEFT JOIN campaign_emails ce ON ce.campaign_id = c.campaign_id
+       LEFT JOIN contacts ct ON ct.contact_id = ce.contact_id
        WHERE ${whereClauses.join(" AND ")}
        GROUP BY
          c.campaign_id,
@@ -651,7 +756,20 @@ const getEmailLogs = async (req, res) => {
       queryParams,
     );
 
-    return res.status(200).json(rows);
+    const normalizedRecipient = recipient.toLowerCase();
+    const filteredRows = recipient
+      ? rows.filter((row) =>
+          String(row.recipient_search_text || "")
+            .toLowerCase()
+            .includes(normalizedRecipient),
+        )
+      : rows;
+
+    const sanitizedRows = filteredRows.map(
+      ({ recipient_search_text, ...row }) => row,
+    );
+
+    return res.status(200).json(sanitizedRows);
   } catch (error) {
     console.error("Error fetching email logs:", error);
     return res.status(500).json({ message: "Failed to fetch email logs" });
@@ -916,6 +1034,87 @@ const trackClick = async (req, res) => {
   return res.redirect(302, redirectUrl);
 };
 
+const unsubscribeRecipient = async (req, res) => {
+  const email = String(req.query.email || "")
+    .trim()
+    .toLowerCase();
+  const campaignId = Number.parseInt(req.query.campaign, 10);
+  const frontendUnsubscribeUrl = `${getFrontendBaseUrl()}/unsubscribe`;
+
+  if (!EMAIL_PATTERN.test(email)) {
+    return res.redirect(302, `${frontendUnsubscribeUrl}?status=invalid-email`);
+  }
+
+  try {
+    const contactRows = await queryDb(
+      `SELECT contact_id, contact_status
+       FROM contacts
+       WHERE contact_email = ?
+       LIMIT 1`,
+      [email],
+    );
+
+    if (contactRows.length > 0) {
+      const contact = contactRows[0];
+
+      if (contact.contact_status !== "unsubscribed") {
+        await queryDb(
+          `UPDATE contacts
+           SET contact_status = 'unsubscribed',
+               unsubscribe_date = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE contact_id = ?`,
+          [contact.contact_id],
+        );
+      }
+
+      if (!Number.isNaN(campaignId) && campaignId > 0) {
+        const campaignEmailRows = await queryDb(
+          `SELECT campaign_email_id, email_status
+           FROM campaign_emails
+           WHERE campaign_id = ? AND contact_id = ?
+           LIMIT 1`,
+          [campaignId, contact.contact_id],
+        );
+
+        if (campaignEmailRows.length > 0) {
+          const campaignEmail = campaignEmailRows[0];
+          const wasAlreadyUnsubscribed =
+            campaignEmail.email_status === "unsubscribed";
+
+          await queryDb(
+            `UPDATE campaign_emails
+             SET email_status = 'unsubscribed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE campaign_email_id = ?`,
+            [campaignEmail.campaign_email_id],
+          );
+
+          if (!wasAlreadyUnsubscribed) {
+            await queryDb(
+              `UPDATE campaigns
+               SET total_unsubscribed = total_unsubscribed + 1
+               WHERE campaign_id = ?`,
+              [campaignId],
+            );
+          }
+
+          await trackEvent(
+            campaignEmail.campaign_email_id,
+            "unsubscribed",
+            req,
+          );
+        }
+      }
+    }
+
+    return res.redirect(302, `${frontendUnsubscribeUrl}?status=success`);
+  } catch (error) {
+    console.error("Error handling unsubscribe:", error);
+    return res.redirect(302, `${frontendUnsubscribeUrl}?status=failed`);
+  }
+};
+
 let schedulerInterval = null;
 let schedulerRunning = false;
 
@@ -1009,5 +1208,6 @@ export default {
   sendCampaign,
   trackOpen,
   trackClick,
+  unsubscribeRecipient,
   sendDueScheduledCampaigns,
 };

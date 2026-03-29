@@ -3,6 +3,28 @@ import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import { Search } from "lucide-react";
 
+const avatarToneClasses = [
+  "bg-indigo-100 text-indigo-700",
+  "bg-blue-100 text-blue-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700",
+  "bg-rose-100 text-rose-700",
+];
+
+const getInitials = (name = "") => {
+  const cleanName = String(name).trim();
+  if (!cleanName) {
+    return "?";
+  }
+
+  const parts = cleanName.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+};
+
 const EmailLogs = () => {
   const [logs, setLogs] = useState([]);
   const [search, setSearch] = useState("");
@@ -45,6 +67,44 @@ const EmailLogs = () => {
     }
   };
 
+  const renderRecipientBadges = (log) => {
+    const names = String(log.recipient_names || "")
+      .split("||")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const totalRecipients = Number(log.total_recipients);
+    const boundedNames =
+      Number.isFinite(totalRecipients) && totalRecipients > 0
+        ? names.slice(0, totalRecipients)
+        : names;
+
+    if (boundedNames.length === 0) {
+      return <span className="text-gray-400">-</span>;
+    }
+
+    const visibleNames = boundedNames.slice(0, 3);
+    const remainingCount = boundedNames.length - visibleNames.length;
+
+    return (
+      <div className="flex items-center" title={boundedNames.join(", ")}>
+        {visibleNames.map((name, index) => (
+          <div
+            key={`${log.id}-${name}-${index}`}
+            className={`h-10 w-10 rounded-full border-2 border-white text-sm font-semibold flex items-center justify-center ${avatarToneClasses[index % avatarToneClasses.length]} ${index === 0 ? "ml-0" : "-ml-2"}`}
+          >
+            {getInitials(name)}
+          </div>
+        ))}
+        {remainingCount > 0 && (
+          <div className="-ml-2 h-10 w-10 rounded-full border-2 border-white bg-gray-100 text-gray-700 text-sm font-semibold flex items-center justify-center">
+            +{remainingCount}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -58,15 +118,17 @@ const EmailLogs = () => {
           </header>
 
           <div className="flex flex-wrap gap-4 mb-8 items-end">
-            <div className="flex-1 max-w-xs relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-              <input
-                type="text"
-                placeholder="Search by subject or sender..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all text-sm"
-              />
+            <div className="flex-1 max-w-xs">
+              <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search by subject or sender..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-11 pr-4 py-2.5 bg-transparent border-0 rounded-lg focus:outline-none text-sm"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">
@@ -89,22 +151,26 @@ const EmailLogs = () => {
               <label className="block text-xs text-gray-500 mb-1">
                 Recipient
               </label>
-              <input
-                type="text"
-                value={recipientFilter}
-                onChange={(e) => setRecipientFilter(e.target.value)}
-                placeholder="Email address"
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
+              <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                <input
+                  type="text"
+                  value={recipientFilter}
+                  onChange={(e) => setRecipientFilter(e.target.value)}
+                  placeholder="Name or email"
+                  className="w-full px-3 py-2 bg-transparent border-0 rounded-lg focus:outline-none text-sm"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date</label>
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
+              <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                <input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-transparent border-0 rounded-lg focus:outline-none text-sm"
+                />
+              </div>
             </div>
             <button
               onClick={fetchLogs}
@@ -130,7 +196,9 @@ const EmailLogs = () => {
                   <th className="px-4 py-3 text-left font-semibold">
                     Total Recipients
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold">
+                    Recipients
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold">Success</th>
                   <th className="px-4 py-3 text-left font-semibold">Failed</th>
                 </tr>
@@ -168,8 +236,8 @@ const EmailLogs = () => {
                       <td className="px-4 py-3 whitespace-nowrap">
                         {log.total_recipients ?? "-"}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {log.status || "-"}
+                      <td className="px-4 py-3 min-w-45">
+                        {renderRecipientBadges(log)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-emerald-700 font-semibold">
                         {log.success_count ?? 0}

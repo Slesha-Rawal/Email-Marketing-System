@@ -41,6 +41,13 @@ app.use("/api", campaignRoutes);
 app.use("/api", analyticsRoutes);
 app.use("/api", userAdminRoutes);
 
+// Backward-compatible unsubscribe link endpoint used in sent emails.
+app.get("/unsubscribe", (req, res) => {
+  const queryString = new URLSearchParams(req.query || {}).toString();
+  const targetPath = `/api/campaigns/unsubscribe${queryString ? `?${queryString}` : ""}`;
+  return res.redirect(302, targetPath);
+});
+
 app.use((req, res) => {
   return res.status(404).json({ message: "Route not found" });
 });

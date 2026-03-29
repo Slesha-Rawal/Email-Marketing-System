@@ -134,6 +134,15 @@ const Campaigns = () => {
   };
 
   const filteredCampaigns = campaigns.filter((campaign) => {
+    const isQuickSendCampaign = String(campaign.campaign_name || "")
+      .trim()
+      .toLowerCase()
+      .startsWith("quick send -");
+
+    if (isQuickSendCampaign) {
+      return false;
+    }
+
     const matchesSearch =
       campaign.campaign_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       campaign.campaign_subject
@@ -301,34 +310,9 @@ const Campaigns = () => {
                       </p>
                       <div className="flex flex-col gap-0.5 mt-1">
                         <p className="text-xs text-gray-400">
-                          Recipients Count:{" "}
-                          <span className="text-gray-500 font-medium">
-                            {campaign.recipients_count !== undefined
-                              ? campaign.recipients_count
-                              : "-"}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-400">
                           Recipients:{" "}
                           <span className="text-gray-500 font-medium">
                             {getRecipientsLabel(campaign.contact_segment)}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Created By:{" "}
-                          <span className="text-gray-500 font-medium">
-                            {campaign.created_by || "-"}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Status:{" "}
-                          <span className="text-gray-500 font-medium">
-                            {campaign.campaign_status
-                              ? campaign.campaign_status
-                                  .charAt(0)
-                                  .toUpperCase() +
-                                campaign.campaign_status.slice(1)
-                              : "-"}
                           </span>
                         </p>
                       </div>

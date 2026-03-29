@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.get("/campaigns/track/open/:trackingId", campaignController.trackOpen);
 router.get("/campaigns/track/click/:trackingId", campaignController.trackClick);
+router.get("/campaigns/unsubscribe", campaignController.unsubscribeRecipient);
 
 router.get("/campaigns", authenticate, campaignController.getAllCampaigns);
 router.get(

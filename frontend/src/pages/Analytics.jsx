@@ -180,7 +180,7 @@ const Analytics = () => {
           <section className="bg-white overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-gray-900">
-                Campaign Performance
+                Email Performance
               </h2>
             </div>
 

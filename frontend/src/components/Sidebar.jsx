@@ -40,6 +40,15 @@ function Sidebar() {
       );
     }
 
+    if (itemPath === "/campaigns") {
+      return (
+        location.pathname === "/campaigns" ||
+        location.pathname.startsWith("/campaigns/") ||
+        location.pathname === "/create-campaign" ||
+        location.pathname.startsWith("/create-campaign/")
+      );
+    }
+
     if (itemPath === "/settings") {
       return location.pathname === "/settings";
     }
