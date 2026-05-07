@@ -1,11 +1,16 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  UserRound,
+  X,
+} from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
-import { useAuth } from "../context/AuthContext.jsx";
-
-const FIXED_SENDER_NAME = "HomeSchool.Asia";
 const MIN_PREVIEW_HEIGHT = 240;
 const MAX_PREVIEW_HEIGHT = 1400;
 
@@ -15,7 +20,8 @@ const initialFormData = {
   campaign_subject: "",
   campaign_body: "",
   contact_segment: "all",
-  schedule_option: "sent",
+  bcc_segment: "",
+  schedule_option: "draft",
   scheduled_date: "",
 };
 
@@ -27,8 +33,10 @@ const hasUnsubscribeMarkup = (html = "") =>
 const CreateCampaign = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const editingCampaign = location.state?.campaign;
+  const { campaignId } = useParams();
+  const [editingCampaign, setEditingCampaign] = useState(
+    location.state?.campaign || null,
+  );
 
   const [formData, setFormData] = useState(initialFormData);
   const [templates, setTemplates] = useState([]);
@@ -37,19 +45,82 @@ const CreateCampaign = () => {
   const [previewRecipients, setPreviewRecipients] = useState([]);
   const [showAllInPreview, setShowAllInPreview] = useState(false);
   const [error, setError] = useState("");
+  const [showRequired, setShowRequired] = useState(false);
   const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
   const [isRecipientsDropdownOpen, setIsRecipientsDropdownOpen] =
     useState(false);
+  const [showBccField, setShowBccField] = useState(false);
+  const [bccContactIds, setBccContactIds] = useState([]);
+  const [bccSearch, setBccSearch] = useState("");
+  const [isBccDropdownOpen, setIsBccDropdownOpen] = useState(false);
   const [isDeliveryDropdownOpen, setIsDeliveryDropdownOpen] = useState(false);
   const templateDropdownRef = useRef(null);
   const recipientsDropdownRef = useRef(null);
+  const bccDropdownRef = useRef(null);
   const deliveryDropdownRef = useRef(null);
+  const bccInputRef = useRef(null);
   const previewViewportRef = useRef(null);
   const previewIframeRef = useRef(null);
   const [iframeHeight, setIframeHeight] = useState(500);
   const [iframeScale, setIframeScale] = useState(1);
   const [iframeContentHeight, setIframeContentHeight] = useState(500);
   const [iframeContentWidth, setIframeContentWidth] = useState(700);
+
+  const parseSegmentIds = (segment = "") => {
+    const value = String(segment || "")
+      .trim()
+      .toLowerCase();
+    if (!value.startsWith("ids:")) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        value
+          .replace("ids:", "")
+          .split(",")
+          .map((id) => Number.parseInt(id.trim(), 10))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    );
+  };
+
+  const bccSegmentValue = useMemo(() => {
+    if (!showBccField || bccContactIds.length === 0) {
+      return "";
+    }
+
+    return `ids:${bccContactIds.join(",")}`;
+  }, [bccContactIds, showBccField]);
+
+  const selectedBccRecipients = useMemo(() => {
+    const selectedIdSet = new Set(bccContactIds);
+    return contacts.filter((contact) => selectedIdSet.has(contact.contact_id));
+  }, [bccContactIds, contacts]);
+
+  const filteredBccContacts = useMemo(() => {
+    const searchTerm = bccSearch.trim().toLowerCase();
+
+    return contacts.filter((contact) => {
+      const isActive = String(contact.contact_status || "") === "active";
+      if (!isActive) {
+        return false;
+      }
+
+      if (!searchTerm) {
+        return true;
+      }
+
+      return (
+        String(contact.contact_name || "")
+          .toLowerCase()
+          .includes(searchTerm) ||
+        String(contact.contact_email || "")
+          .toLowerCase()
+          .includes(searchTerm)
+      );
+    });
+  }, [bccSearch, contacts]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -93,6 +164,13 @@ const CreateCampaign = () => {
       }
 
       if (
+        bccDropdownRef.current &&
+        !bccDropdownRef.current.contains(event.target)
+      ) {
+        setIsBccDropdownOpen(false);
+      }
+
+      if (
         deliveryDropdownRef.current &&
         !deliveryDropdownRef.current.contains(event.target)
       ) {
@@ -105,13 +183,56 @@ const CreateCampaign = () => {
   }, []);
 
   useEffect(() => {
+    const stateCampaign = location.state?.campaign || null;
+
+    if (stateCampaign && !campaignId) {
+      setEditingCampaign(stateCampaign);
+      return;
+    }
+
+    if (!campaignId) {
+      setEditingCampaign(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchCampaign = async () => {
+      try {
+        const response = await api.get(`/campaigns/${campaignId}`);
+        if (!cancelled) {
+          setEditingCampaign(response.data || null);
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          setEditingCampaign(null);
+          setError(
+            requestError.response?.data?.message || "Failed to load campaign",
+          );
+        }
+      }
+    };
+
+    fetchCampaign();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, location.state]);
+
+  useEffect(() => {
     if (!editingCampaign) {
+      setFormData(initialFormData);
+      setShowBccField(false);
+      setBccContactIds([]);
+      setBccSearch("");
       return;
     }
 
     const status = String(
       editingCampaign.campaign_status || "draft",
     ).toLowerCase();
+    const normalizedBccIds = parseSegmentIds(editingCampaign.bcc_segment);
 
     setFormData({
       campaign_name: editingCampaign.campaign_name || "",
@@ -119,6 +240,8 @@ const CreateCampaign = () => {
       campaign_subject: editingCampaign.campaign_subject || "",
       campaign_body: editingCampaign.campaign_body || "",
       contact_segment: editingCampaign.contact_segment || "all",
+      bcc_segment:
+        normalizedBccIds.length > 0 ? `ids:${normalizedBccIds.join(",")}` : "",
       schedule_option:
         status === "scheduled"
           ? "scheduled"
@@ -129,7 +252,24 @@ const CreateCampaign = () => {
         ? new Date(editingCampaign.scheduled_date).toISOString().slice(0, 16)
         : "",
     });
+
+    setShowBccField(normalizedBccIds.length > 0);
+    setBccContactIds(normalizedBccIds);
+    setBccSearch("");
   }, [editingCampaign]);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      if (prev.bcc_segment === bccSegmentValue) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        bcc_segment: bccSegmentValue,
+      };
+    });
+  }, [bccSegmentValue]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +351,7 @@ const CreateCampaign = () => {
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
+    setError("");
 
     if (name === "template_id") {
       const selectedTemplate = templates.find(
@@ -233,6 +374,7 @@ const CreateCampaign = () => {
   };
 
   const handleTemplateSelect = (value) => {
+    setError("");
     const selectedTemplateOption = templates.find(
       (template) => String(template.template_id) === String(value),
     );
@@ -248,6 +390,7 @@ const CreateCampaign = () => {
   };
 
   const handleRecipientsSelect = (value) => {
+    setError("");
     setFormData((prev) => ({
       ...prev,
       contact_segment: value,
@@ -256,6 +399,7 @@ const CreateCampaign = () => {
   };
 
   const handleDeliverySelect = (value) => {
+    setError("");
     setFormData((prev) => ({
       ...prev,
       schedule_option: value,
@@ -263,9 +407,43 @@ const CreateCampaign = () => {
     setIsDeliveryDropdownOpen(false);
   };
 
+  const toggleBccField = () => {
+    setError("");
+
+    if (showBccField) {
+      setShowBccField(false);
+      setBccContactIds([]);
+      setBccSearch("");
+      setIsBccDropdownOpen(false);
+      return;
+    }
+
+    setShowBccField(true);
+    setIsBccDropdownOpen(true);
+  };
+
+  const toggleBccContactSelection = (contactId) => {
+    setBccContactIds((prev) =>
+      prev.includes(contactId)
+        ? prev.filter((id) => id !== contactId)
+        : [...prev, contactId],
+    );
+  };
+
+  const removeBccContact = (contactId) => {
+    setBccContactIds((prev) => prev.filter((id) => id !== contactId));
+  };
+
+  const clearBccSelection = () => {
+    setBccContactIds([]);
+    setBccSearch("");
+    setIsBccDropdownOpen(false);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setShowRequired(true);
 
     const missingFields = [];
 
@@ -282,13 +460,24 @@ const CreateCampaign = () => {
     }
 
     if (missingFields.length > 0) {
-      setError(`Please fill required fields: ${missingFields.join(", ")}`);
       return;
     }
 
-    if (formData.schedule_option === "scheduled" && !formData.scheduled_date) {
-      setError("Select a schedule date for scheduled campaigns");
-      return;
+    if (formData.schedule_option === "scheduled") {
+      if (!formData.scheduled_date) {
+        return;
+      }
+
+      const scheduledAt = new Date(formData.scheduled_date);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        setError("Please enter a valid schedule date and time");
+        return;
+      }
+
+      if (scheduledAt.getTime() < Date.now()) {
+        setError("Scheduled date must be in the future");
+        return;
+      }
     }
 
     const selectedTemplate = templates.find(
@@ -316,11 +505,7 @@ const CreateCampaign = () => {
       campaign_subject: campaignSubject,
       campaign_body: campaignBody,
       contact_segment: formData.contact_segment,
-      sender_name: FIXED_SENDER_NAME,
-      reply_to_email: "",
-      sender_email: String(user?.email || "noreply@example.com")
-        .trim()
-        .toLowerCase(),
+      bcc_segment: bccSegmentValue || null,
       campaign_status:
         formData.schedule_option === "scheduled" ? "scheduled" : "draft",
       scheduled_date:
@@ -357,9 +542,9 @@ const CreateCampaign = () => {
   };
 
   const shellWrapperClass =
-    "relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300";
+    "relative rounded-md border border-gray-200 bg-white transition-all focus-within:border-indigo-300";
   const shellInputClass =
-    "w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none";
+    "w-full rounded-md border-none bg-transparent px-3 py-2 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none";
   const selectedTemplate = templates.find(
     (template) => String(template.template_id) === String(formData.template_id),
   );
@@ -368,14 +553,14 @@ const CreateCampaign = () => {
     : "Select Template";
   const selectedRecipientsLabel =
     formData.contact_segment === "all"
-      ? "All Contacts"
+      ? "To: All Contacts"
       : (() => {
           const selectedGroup = groups.find(
             (group) => `group:${group.group_id}` === formData.contact_segment,
           );
           return selectedGroup
-            ? `Group: ${selectedGroup.group_name}`
-            : "Select Recipients";
+            ? `To: Group: ${selectedGroup.group_name}`
+            : "To: Select Recipients";
         })();
   const selectedDeliveryLabel =
     formData.schedule_option === "sent"
@@ -386,6 +571,25 @@ const CreateCampaign = () => {
   const previewSubject =
     selectedTemplate?.template_subject || formData.campaign_subject;
   const previewBody = selectedTemplate?.template_body || formData.campaign_body;
+  const campaignNameRequired =
+    showRequired && !String(formData.campaign_name || "").trim();
+  const templateRequired =
+    showRequired && !String(formData.template_id || "").trim();
+  const recipientsRequired =
+    showRequired && !String(formData.contact_segment || "").trim();
+  const scheduledDateRequired =
+    showRequired &&
+    formData.schedule_option === "scheduled" &&
+    !String(formData.scheduled_date || "").trim();
+  const minScheduleDateTime = new Date(
+    Date.now() - new Date().getTimezoneOffset() * 60000,
+  )
+    .toISOString()
+    .slice(0, 16);
+
+  const isReadOnly =
+    editingCampaign &&
+    String(editingCampaign.campaign_status || "draft").toLowerCase() === "sent";
 
   const updatePreviewLayout = () => {
     const iframe = previewIframeRef.current;
@@ -580,37 +784,45 @@ const CreateCampaign = () => {
 
       <div className="flex-1 ml-64 overflow-y-auto">
         <main className="p-6 lg:p-8">
+          <header className="mb-4">
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              {editingCampaign
+                ? isReadOnly
+                  ? "View Campaign"
+                  : "Edit Campaign"
+                : "Create Campaign"}
+            </h1>
+            <p className="text-sm text-gray-500">
+              {isReadOnly
+                ? "This campaign has been sent and cannot be edited."
+                : "Configure campaign basics before sending."}
+            </p>
+          </header>
+
           <section className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-5 items-start">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5">
-              <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                {editingCampaign ? "Edit Campaign" : "Create Campaign"}
-              </h1>
-              <p className="text-sm text-gray-500">
-                Configure campaign basics before sending.
-              </p>
-
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
+            <div className="bg-white rounded-md border border-gray-200 p-5 space-y-5">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="grid grid-cols-1 gap-5">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
                       Campaign Name
                     </label>
-                    <div className={shellWrapperClass}>
+                    <div
+                      className={`${shellWrapperClass} ${campaignNameRequired ? "border-red-400 focus-within:border-red-400" : ""} ${isReadOnly ? "bg-gray-50" : ""}`}
+                    >
                       <input
                         type="text"
                         name="campaign_name"
                         value={formData.campaign_name}
                         onChange={handleInputChange}
-                        className={shellInputClass}
+                        disabled={isReadOnly}
+                        className={`${shellInputClass} ${isReadOnly ? "cursor-not-allowed text-gray-500" : ""}`}
                         placeholder="Enter campaign name"
                       />
                     </div>
+                    {campaignNameRequired && (
+                      <p className="mt-1 text-sm text-red-500">Required</p>
+                    )}
                   </div>
 
                   <div>
@@ -623,7 +835,12 @@ const CreateCampaign = () => {
                         onClick={() =>
                           setIsTemplateDropdownOpen((prev) => !prev)
                         }
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 transition-all focus:outline-none focus:border-indigo-300 flex items-center justify-between"
+                        disabled={isReadOnly}
+                        className={`w-full rounded-md border bg-white px-3 py-2 text-left text-sm text-gray-700 transition-all focus:outline-none flex items-center justify-between ${
+                          templateRequired
+                            ? "border-red-400 focus:border-red-400"
+                            : "border-gray-200 focus:border-indigo-300"
+                        } ${isReadOnly ? "bg-gray-50 cursor-not-allowed text-gray-500" : ""}`}
                       >
                         <span className="truncate">{selectedTemplateName}</span>
                         {isTemplateDropdownOpen ? (
@@ -634,12 +851,12 @@ const CreateCampaign = () => {
                       </button>
 
                       {isTemplateDropdownOpen && (
-                        <div className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                          <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+                        <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+                          <div className="slim-scrollbar max-h-72 overflow-y-auto space-y-1">
                             <button
                               type="button"
                               onClick={() => handleTemplateSelect("")}
-                              className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                 !formData.template_id
                                   ? "bg-indigo-50 text-indigo-700 font-medium"
                                   : "text-gray-700 hover:bg-gray-50"
@@ -660,7 +877,7 @@ const CreateCampaign = () => {
                                       String(template.template_id),
                                     )
                                   }
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                     isSelected
                                       ? "bg-indigo-50 text-indigo-700 font-medium"
                                       : "text-gray-700 hover:bg-gray-50"
@@ -674,19 +891,41 @@ const CreateCampaign = () => {
                         </div>
                       )}
                     </div>
+                    {templateRequired && (
+                      <p className="mt-1 text-sm text-red-500">Required</p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                      Select Recipients
-                    </label>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Select Recipients
+                      </label>
+                      <button
+                        type="button"
+                        onClick={toggleBccField}
+                        disabled={isReadOnly}
+                        className={`text-xs font-medium transition-colors ${
+                          isReadOnly
+                            ? "cursor-not-allowed text-gray-400"
+                            : "text-indigo-600 hover:text-indigo-700"
+                        }`}
+                      >
+                        {showBccField ? "Remove Bcc" : "Add Bcc"}
+                      </button>
+                    </div>
                     <div ref={recipientsDropdownRef} className="relative">
                       <button
                         type="button"
                         onClick={() =>
                           setIsRecipientsDropdownOpen((prev) => !prev)
                         }
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 transition-all focus:outline-none focus:border-indigo-300 flex items-center justify-between"
+                        disabled={isReadOnly}
+                        className={`w-full rounded-md border bg-white px-3 py-2 text-left text-sm text-gray-700 transition-all focus:outline-none flex items-center justify-between ${
+                          recipientsRequired
+                            ? "border-red-400 focus:border-red-400"
+                            : "border-gray-200 focus:border-indigo-300"
+                        } ${isReadOnly ? "bg-gray-50 cursor-not-allowed text-gray-500" : ""}`}
                       >
                         <span className="truncate">
                           {selectedRecipientsLabel}
@@ -699,18 +938,18 @@ const CreateCampaign = () => {
                       </button>
 
                       {isRecipientsDropdownOpen && (
-                        <div className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                          <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+                        <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+                          <div className="slim-scrollbar max-h-72 overflow-y-auto space-y-1">
                             <button
                               type="button"
                               onClick={() => handleRecipientsSelect("all")}
-                              className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                 formData.contact_segment === "all"
                                   ? "bg-indigo-50 text-indigo-700 font-medium"
                                   : "text-gray-700 hover:bg-gray-50"
                               }`}
                             >
-                              All Contacts
+                              To: All Contacts
                             </button>
                             {groups.map((group) => {
                               const value = `group:${group.group_id}`;
@@ -721,13 +960,13 @@ const CreateCampaign = () => {
                                   key={group.group_id}
                                   type="button"
                                   onClick={() => handleRecipientsSelect(value)}
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                     isSelected
                                       ? "bg-indigo-50 text-indigo-700 font-medium"
                                       : "text-gray-700 hover:bg-gray-50"
                                   }`}
                                 >
-                                  Group: {group.group_name}
+                                  To: Group: {group.group_name}
                                 </button>
                               );
                             })}
@@ -735,7 +974,158 @@ const CreateCampaign = () => {
                         </div>
                       )}
                     </div>
+                    {recipientsRequired && (
+                      <p className="mt-1 text-sm text-red-500">Required</p>
+                    )}
                   </div>
+
+                  {showBccField && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                        Bcc
+                      </label>
+                      <div ref={bccDropdownRef} className="relative">
+                        <div
+                          className={`rounded-md border bg-white px-2.5 py-1.5 transition-all ${
+                            isReadOnly
+                              ? "border-gray-200 bg-gray-50"
+                              : "border-gray-200 focus-within:border-indigo-300"
+                          }`}
+                          onClick={() => {
+                            if (isReadOnly) {
+                              return;
+                            }
+
+                            setIsBccDropdownOpen(true);
+                            bccInputRef.current?.focus();
+                          }}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="pt-1 text-gray-400">
+                              <UserRound className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {selectedBccRecipients.map((contact) => (
+                                  <span
+                                    key={contact.contact_id}
+                                    className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+                                  >
+                                    <span className="truncate max-w-52.5">
+                                      {contact.contact_email}
+                                    </span>
+                                    {!isReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          removeBccContact(contact.contact_id);
+                                        }}
+                                        className="text-indigo-500 transition-colors hover:text-indigo-700"
+                                        aria-label={`Remove ${contact.contact_email}`}
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </span>
+                                ))}
+                                <input
+                                  ref={bccInputRef}
+                                  type="text"
+                                  value={bccSearch}
+                                  onFocus={() => setIsBccDropdownOpen(true)}
+                                  onChange={(event) => {
+                                    setBccSearch(event.target.value);
+                                    setIsBccDropdownOpen(true);
+                                  }}
+                                  disabled={isReadOnly}
+                                  placeholder="Enter Bcc Emails"
+                                  className={`min-w-50 flex-1 border-none bg-transparent py-0.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none ${
+                                    isReadOnly
+                                      ? "cursor-not-allowed text-gray-500"
+                                      : ""
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                            {(bccContactIds.length > 0 || bccSearch) &&
+                              !isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    clearBccSelection();
+                                  }}
+                                  className="pt-1 text-gray-400 transition-colors hover:text-gray-600"
+                                  aria-label="Clear Bcc"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                          </div>
+                        </div>
+
+                        {isBccDropdownOpen && !isReadOnly && (
+                          <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+                            <div className="slim-scrollbar max-h-80 overflow-y-auto p-1.5">
+                              {filteredBccContacts.length > 0 ? (
+                                filteredBccContacts.map((contact) => {
+                                  const isSelected = bccContactIds.includes(
+                                    contact.contact_id,
+                                  );
+
+                                  return (
+                                    <button
+                                      key={contact.contact_id}
+                                      type="button"
+                                      onClick={() =>
+                                        toggleBccContactSelection(
+                                          contact.contact_id,
+                                        )
+                                      }
+                                      className={`w-full rounded-md px-3 py-2.5 text-left transition-colors flex items-center justify-between gap-3 ${
+                                        isSelected
+                                          ? "bg-indigo-50/80 text-indigo-700"
+                                          : "text-gray-700 hover:bg-gray-50"
+                                      }`}
+                                    >
+                                      <div className="min-w-0">
+                                        <p
+                                          className={`truncate text-sm font-semibold ${
+                                            isSelected
+                                              ? "text-indigo-700"
+                                              : "text-gray-800"
+                                          }`}
+                                        >
+                                          {contact.contact_name || "Unnamed"}
+                                        </p>
+                                        <p className="truncate text-xs text-gray-500">
+                                          {contact.contact_email}
+                                        </p>
+                                      </div>
+                                      <span
+                                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                          isSelected
+                                            ? "border-indigo-500 text-indigo-600"
+                                            : "border-gray-300 text-transparent"
+                                        }`}
+                                      >
+                                        <Check className="h-3.5 w-3.5" />
+                                      </span>
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <p className="px-3 py-2 text-sm text-gray-500">
+                                  No matching contacts found.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
@@ -747,7 +1137,8 @@ const CreateCampaign = () => {
                         onClick={() =>
                           setIsDeliveryDropdownOpen((prev) => !prev)
                         }
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 transition-all focus:outline-none focus:border-indigo-300 flex items-center justify-between"
+                        disabled={isReadOnly}
+                        className={`w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-sm text-gray-700 transition-all focus:outline-none focus:border-indigo-300 flex items-center justify-between ${isReadOnly ? "bg-gray-50 cursor-not-allowed text-gray-500" : ""}`}
                       >
                         <span className="truncate">
                           {selectedDeliveryLabel}
@@ -760,7 +1151,7 @@ const CreateCampaign = () => {
                       </button>
 
                       {isDeliveryDropdownOpen && (
-                        <div className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                        <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg">
                           <div className="space-y-1">
                             {[
                               { value: "sent", label: "Send Now" },
@@ -779,7 +1170,7 @@ const CreateCampaign = () => {
                                   onClick={() =>
                                     handleDeliverySelect(option.value)
                                   }
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                     isSelected
                                       ? "bg-indigo-50 text-indigo-700 font-medium"
                                       : "text-gray-700 hover:bg-gray-50"
@@ -800,41 +1191,55 @@ const CreateCampaign = () => {
                       <label className="block text-xs font-medium text-gray-700 mb-1.5">
                         Scheduled Date
                       </label>
-                      <div className={shellWrapperClass}>
+                      <div
+                        className={`${shellWrapperClass} ${scheduledDateRequired ? "border-red-400 focus-within:border-red-400" : ""} ${isReadOnly ? "bg-gray-50" : ""}`}
+                      >
                         <input
                           type="datetime-local"
                           name="scheduled_date"
                           value={formData.scheduled_date}
                           onChange={handleInputChange}
-                          className={shellInputClass}
+                          disabled={isReadOnly}
+                          min={minScheduleDateTime}
+                          className={`${shellInputClass} ${isReadOnly ? "cursor-not-allowed text-gray-500" : ""}`}
                         />
                       </div>
+                      {scheduledDateRequired && (
+                        <p className="mt-1 text-sm text-red-500">Required</p>
+                      )}
                     </div>
                   )}
+
+                  {error && <p className="text-sm text-red-500">{error}</p>}
                 </div>
 
                 <div className="flex justify-end gap-3 pt-1">
                   <button
                     type="button"
                     onClick={() => navigate("/campaigns")}
-                    className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="rounded-md border border-gray-300 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    Cancel
+                    {isReadOnly ? "Close" : "Cancel"}
                   </button>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
-                  >
-                    {editingCampaign ? "Update" : "Save"}
-                    <ArrowRight size={18} />
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700"
+                    >
+                      {editingCampaign ? "Update" : "Save"}
+                      <ArrowRight size={18} />
+                    </button>
+                  )}
                 </div>
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 lg:p-4">
-              <div className="mb-3 inline-flex items-center gap-2 text-sm text-gray-700 font-medium">
-                Preview
+            <div className="bg-white rounded-md border border-gray-200 p-3 lg:p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="inline-flex items-center gap-2 text-sm text-gray-700 font-medium">
+                  <Eye className="h-4 w-4 text-gray-500" />
+                  Preview
+                </div>
               </div>
               <div className="flex gap-2 mb-3 items-start border-t border-gray-200 pt-2">
                 <span className="text-xs font-medium text-gray-700 min-w-5">
@@ -886,12 +1291,35 @@ const CreateCampaign = () => {
                   )}
                 </div>
               </div>
+              {showBccField && (
+                <div className="flex gap-2 mb-3 items-start pt-1">
+                  <span className="text-xs font-medium text-gray-700 min-w-5">
+                    Bcc:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                    {selectedBccRecipients.length > 0 ? (
+                      selectedBccRecipients.map((contact) => (
+                        <span
+                          key={contact.contact_id}
+                          className="text-[11px] font-medium text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md"
+                        >
+                          {contact.contact_email}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-400 italic">
+                        No Bcc recipients selected
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="mb-2 border-t border-gray-200 pt-2">
                 <p className="text-sm font-semibold text-gray-900 truncate">
                   {previewSubject || "Template Subject"}
                 </p>
               </div>
-              <div className="overflow-hidden mx-auto rounded-lg border border-gray-200">
+              <div className="overflow-hidden mx-auto rounded-md border border-indigo-200/60">
                 <div
                   ref={previewViewportRef}
                   className="bg-white relative overflow-hidden"

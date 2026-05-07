@@ -1,52 +1,77 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
-import { Eye, Pencil, Trash2, Users } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, PencilLine, Plus, Trash2, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Pagination from "../components/Pagination.jsx";
 import api from "../lib/api.js";
+import defaultAvatar from "../assets/default-avatar.svg";
 
-const formatDateTime = (value) => {
+const formatDate = (value) => {
   if (!value) {
-    return "-";
+    return "Never";
   }
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
-    return "-";
+    return "Never";
   }
 
-  return parsed.toLocaleString();
+  return parsed.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 };
 
-const initialEditState = {
+const formatRoleLabel = (role = "") =>
+  role === "admin" ? "Admin" : role === "users" ? "User" : role;
+
+const resolveAvatarUrl = (value) => {
+  const source = String(value || "").trim();
+
+  if (!source) {
+    return "";
+  }
+
+  if (source.startsWith("http://") || source.startsWith("https://")) {
+    return source;
+  }
+
+  const baseUrl = String(api.defaults.baseURL || "").trim();
+  const origin = baseUrl.replace(/\/api\/?$/, "");
+  const normalizedPath = source.startsWith("/") ? source : `/${source}`;
+  return `${origin}${normalizedPath}`;
+};
+
+const initialModalState = {
+  open: false,
+  mode: "create",
   userId: null,
   name: "",
   email: "",
-  role: "marketing",
+  role: "users",
+  password: "",
 };
 
 function UsersPage() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const [editState, setEditState] = useState(initialEditState);
-  const [activityUser, setActivityUser] = useState(null);
-  const [activityData, setActivityData] = useState(null);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityError, setActivityError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [modal, setModal] = useState(initialModalState);
 
   const usersTableRef = useRef(null);
-  const activityTableRef = useRef(null);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const response = await api.get("/admin/users");
-      setUsers(response.data);
+      const nextUsers = Array.isArray(response.data) ? response.data : [];
+      setUsers(nextUsers);
       setError("");
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Failed to load users");
+      console.error("Failed to load users:", requestError);
     } finally {
       setLoading(false);
     }
@@ -56,416 +81,383 @@ function UsersPage() {
     fetchUsers();
   }, []);
 
-  const userRows = useMemo(() => users || [], [users]);
+  const rows = useMemo(() => users || [], [users]);
 
-  const handleStartEdit = (user) => {
-    setEditState({
+  const openCreateModal = () => {
+    setError("");
+    setModal({
+      open: true,
+      mode: "create",
+      userId: null,
+      name: "",
+      email: "",
+      role: "users",
+      password: "",
+    });
+  };
+
+  const openEditModal = (user) => {
+    setError("");
+    setModal({
+      open: true,
+      mode: "edit",
       userId: user.userId,
       name: user.name,
       email: user.email,
       role: user.role,
+      password: "",
     });
-    setMessage("");
-    setError("");
   };
 
-  const handleCancelEdit = () => {
-    setEditState(initialEditState);
+  const closeModal = () => {
+    if (submitting) {
+      return;
+    }
+
+    setModal(initialModalState);
   };
 
-  const handleUpdateUser = async (event) => {
+  const handleModalChange = (field, value) => {
+    setModal((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmitModal = async (event) => {
     event.preventDefault();
 
-    if (!editState.userId) {
+    const name = String(modal.name || "").trim();
+    const email = String(modal.email || "")
+      .trim()
+      .toLowerCase();
+    const role = String(modal.role || "")
+      .trim()
+      .toLowerCase();
+    const password = String(modal.password || "");
+
+    if (!name || !email || !role) {
+      setError("Name, email, and role are required.");
+      return;
+    }
+
+    if (modal.mode === "create" && password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
     try {
-      await api.put(`/admin/users/${editState.userId}`, {
-        name: editState.name,
-        email: editState.email,
-        role: editState.role,
-      });
-      setMessage("User updated successfully");
-      setEditState(initialEditState);
+      setSubmitting(true);
+
+      if (modal.mode === "create") {
+        await api.post("/admin/users", {
+          name,
+          email,
+          role,
+          password,
+        });
+      } else {
+        await api.put(`/admin/users/${modal.userId}`, {
+          name,
+          email,
+          role,
+        });
+      }
+
+      setError("");
+      setModal(initialModalState);
       await fetchUsers();
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Failed to update user");
+      console.error(
+        `Failed to ${modal.mode === "create" ? "create" : "update"} user:`,
+        requestError,
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDeleteUser = async (user) => {
-    if (!window.confirm(`Delete ${user.name}? This cannot be undone.`)) {
+    const ok = window.confirm(`Delete ${user.name}? This cannot be undone.`);
+    if (!ok) {
       return;
     }
 
     try {
       await api.delete(`/admin/users/${user.userId}`);
-      setMessage("User deleted successfully");
       setError("");
-      if (editState.userId === user.userId) {
-        setEditState(initialEditState);
-      }
       await fetchUsers();
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Failed to delete user");
+      console.error("Failed to delete user:", requestError);
     }
   };
 
-  const handleViewUser = async (user) => {
-    try {
-      setActivityLoading(true);
-      setActivityError("");
-      setActivityUser(user);
-
-      const response = await api.get(`/admin/users/${user.userId}/activity`);
-      setActivityData(response.data);
-    } catch (requestError) {
-      setActivityData(null);
-      setActivityError(
-        requestError.response?.data?.message || "Failed to load user activity",
-      );
-    } finally {
-      setActivityLoading(false);
-    }
+  const handleViewActivity = (user) => {
+    navigate(`/users/${user.userId}/activity`);
   };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
+      <div className="ml-64 flex-1">
+        <main className="p-8">
+          <section className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900">Manage Users</h1>
+              <p className="mt-2 text-sm text-gray-500">
+                Manage system users and administrators.
+              </p>
+            </div>
 
-        <main className="p-8 space-y-6">
-          <section>
-            <h1 className="text-2xl font-semibold text-gray-900">Users</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Manage and monitor all marketing users activity.
-            </p>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add New User/Admin
+            </button>
           </section>
 
-          {message ? (
-            <section className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              {message}
-            </section>
-          ) : null}
-
           {error ? (
-            <section className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <section className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </section>
           ) : null}
 
-          {editState.userId ? (
-            <section className="bg-white p-6">
-              <h2 className="text-lg font-semibold text-gray-900">Edit User</h2>
-              <form
-                className="mt-5 grid grid-cols-1 md:grid-cols-4 gap-4"
-                onSubmit={handleUpdateUser}
-              >
-                <input
-                  value={editState.name}
-                  onChange={(event) =>
-                    setEditState((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  placeholder="Name"
-                  className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <input
-                  type="email"
-                  value={editState.email}
-                  onChange={(event) =>
-                    setEditState((prev) => ({
-                      ...prev,
-                      email: event.target.value,
-                    }))
-                  }
-                  placeholder="Email"
-                  className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <select
-                  value={editState.role}
-                  onChange={(event) =>
-                    setEditState((prev) => ({
-                      ...prev,
-                      role: event.target.value,
-                    }))
-                  }
-                  className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="marketing">marketing</option>
-                  <option value="admin">admin</option>
-                </select>
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </section>
-          ) : null}
-
-          {activityUser ? (
-            <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Activity Details: {activityUser.name}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActivityUser(null);
-                    setActivityData(null);
-                    setActivityError("");
-                  }}
-                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Close
-                </button>
-              </div>
-
-              {activityLoading ? (
-                <div className="mt-4 text-sm text-gray-500">
-                  Loading activity...
-                </div>
-              ) : null}
-
-              {activityError ? (
-                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {activityError}
-                </div>
-              ) : null}
-
-              {activityData && !activityLoading ? (
-                <>
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div className="rounded-lg border border-gray-200 px-4 py-3">
-                      <p className="text-xs text-gray-500">Last Login</p>
-                      <p className="text-sm font-medium text-gray-900 mt-1">
-                        {formatDateTime(activityData.user?.lastLoginAt)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 px-4 py-3">
-                      <p className="text-xs text-gray-500">Campaigns Sent</p>
-                      <p className="text-sm font-medium text-gray-900 mt-1">
-                        {activityData.summary?.campaignsSent || 0}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 px-4 py-3">
-                      <p className="text-xs text-gray-500">Contacts Created</p>
-                      <p className="text-sm font-medium text-gray-900 mt-1">
-                        {activityData.summary?.contactsCreated || 0}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 px-4 py-3">
-                      <p className="text-xs text-gray-500">Last Activity</p>
-                      <p className="text-sm font-medium text-gray-900 mt-1">
-                        {formatDateTime(activityData.summary?.lastActivityAt)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 overflow-x-auto">
-                    <table className="w-full" ref={activityTableRef}>
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-gray-100">
-                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Campaign Name
-                          </th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Sent Date
-                          </th>
-                          <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Recipients
-                          </th>
-                          <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Sent
-                          </th>
-                          <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Opens
-                          </th>
-                          <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Clicks
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(activityData.sentCampaigns || []).map((campaign) => (
-                          <tr
-                            key={campaign.campaign_id}
-                            className="border-b border-gray-100 hover:bg-gray-50"
-                          >
-                            <td className="px-4 py-3 text-sm text-gray-900">
-                              {campaign.campaign_name}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
-                              {formatDateTime(campaign.sent_date)}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-700">
-                              {campaign.total_recipients || 0}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-700">
-                              {campaign.total_sent || 0}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-700">
-                              {campaign.total_opened || 0}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-700">
-                              {campaign.total_clicked || 0}
-                            </td>
-                          </tr>
-                        ))}
-
-                        {(activityData.sentCampaigns || []).length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan="6"
-                              className="px-4 py-8 text-center text-sm text-gray-500"
-                            >
-                              No sent campaigns found for this user.
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                  <Pagination tableRef={activityTableRef} options={[10, 15, 25, 50]} />
-                </>
-              ) : null}
-            </section>
-          ) : null}
-
-          <section className="bg-white overflow-hidden">
-            <div className="border-b border-gray-200 px-6 py-4 flex items-center gap-2">
-              <Users className="h-4 w-4 text-gray-500" />
-              <h2 className="text-lg font-semibold text-gray-900">
-                Marketing Users
-              </h2>
-            </div>
-
+          <section className="overflow-hidden rounded-md border border-indigo-200/60 bg-white">
             {loading ? (
-              <div className="px-6 py-8 text-sm text-gray-500">
+              <div className="px-6 py-10 text-sm text-gray-500">
                 Loading users...
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full" ref={usersTableRef}>
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-100">
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Name
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Email
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Role
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Last Login
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Created
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Last Activity
-                      </th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {userRows.map((user) => (
-                      <tr
-                        key={user.userId}
-                        className="border-b border-gray-100 hover:bg-gray-50"
-                      >
-                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                          {user.name}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {user.email}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {user.role}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {formatDateTime(user.lastLoginAt)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {formatDateTime(user.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {formatDateTime(user.activity?.lastActivityAt)}
-                          <div className="mt-1 text-xs text-gray-500">
-                            C:{user.activity?.contactsCreated || 0} | T:
-                            {user.activity?.templatesCreated || 0} | M:
-                            {user.activity?.campaignsCreated || 0}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleViewUser(user)}
-                              className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
-                              title="View user activity"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleStartEdit(user)}
-                              className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
-                              title="Edit user"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteUser(user)}
-                              className="rounded-md border border-red-200 p-2 text-red-600 hover:bg-red-50"
-                              title="Delete user"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full" ref={usersTableRef}>
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-100">
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Email
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Role
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Created
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Last Login
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {rows.map((user) => (
+                        <tr key={user.userId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={
+                                  user.avatarUrl
+                                    ? resolveAvatarUrl(user.avatarUrl)
+                                    : defaultAvatar
+                                }
+                                alt={
+                                  user.avatarUrl
+                                    ? `${user.name} avatar`
+                                    : "Default avatar"
+                                }
+                                className="h-9 w-9 rounded-full object-cover"
+                              />
+                              <span className="truncate">{user.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {user.email}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-700">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-sm font-semibold ${
+                                user.role === "admin"
+                                  ? "bg-indigo-100 text-indigo-700"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              {formatRoleLabel(user.role)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {formatDate(user.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {formatDate(user.lastLoginAt)}
+                          </td>
+                          <td className="px-6 py-4 text-sm">
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleViewActivity(user)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                                title="View activity"
+                                aria-label={`View activity for ${user.name}`}
+                              >
+                                <Activity className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(user)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                                title="Edit user"
+                                aria-label={`Edit ${user.name}`}
+                              >
+                                <PencilLine className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(user)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                                title="Delete user"
+                                aria-label={`Delete ${user.name}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
 
-                    {userRows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan="7"
-                          className="px-4 py-8 text-center text-sm text-gray-500"
-                        >
-                          No marketing users found.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan="6"
+                            className="px-6 py-10 text-center text-sm text-gray-500"
+                          >
+                            No users found.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pagination tableRef={usersTableRef} options={[15, 30, 50]} />
+              </>
             )}
-            <Pagination tableRef={usersTableRef} options={[10, 15, 25, 50]} />
           </section>
         </main>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <h3 className="text-base font-semibold text-gray-900">
+                {modal.mode === "create" ? "Add New User/Admin" : "Edit User"}
+              </h3>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitModal} className="space-y-4 px-5 py-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={modal.name}
+                  onChange={(event) =>
+                    handleModalChange("name", event.target.value)
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
+                  placeholder="Enter name"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={modal.email}
+                  onChange={(event) =>
+                    handleModalChange("email", event.target.value)
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
+                  placeholder="Enter email"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Role
+                </label>
+                <select
+                  value={modal.role}
+                  onChange={(event) =>
+                    handleModalChange("role", event.target.value)
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
+                >
+                  <option value="users">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              {modal.mode === "create" ? (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={modal.password}
+                    onChange={(event) =>
+                      handleModalChange("password", event.target.value)
+                    }
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
+                    placeholder="Minimum 8 characters"
+                  />
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  disabled={submitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? modal.mode === "create"
+                      ? "Creating..."
+                      : "Saving..."
+                    : modal.mode === "create"
+                      ? "Create"
+                      : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

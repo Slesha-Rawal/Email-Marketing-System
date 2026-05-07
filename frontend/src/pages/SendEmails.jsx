@@ -1,17 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
-import { useAuth } from "../context/AuthContext.jsx";
 import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
-  AlertCircle,
   ChevronDown,
   ChevronUp,
   Eye,
   Users,
   FileText,
-  Send,
+  UserRound,
+  X,
 } from "lucide-react";
 
 const MIN_PREVIEW_HEIGHT = 240;
@@ -23,7 +22,6 @@ const hasUnsubscribeMarkup = (html = "") =>
   );
 
 const SendEmails = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -33,11 +31,17 @@ const SendEmails = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isRecipientsDropdownOpen, setIsRecipientsDropdownOpen] =
     useState(false);
+  const [showBccField, setShowBccField] = useState(false);
+  const [bccContactIds, setBccContactIds] = useState([]);
+  const [bccSearch, setBccSearch] = useState("");
+  const [isBccDropdownOpen, setIsBccDropdownOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
   const [showAllInPreview, setShowAllInPreview] = useState(false);
   const templateDropdownRef = useRef(null);
   const recipientsDropdownRef = useRef(null);
+  const bccDropdownRef = useRef(null);
+  const bccInputRef = useRef(null);
   const previewViewportRef = useRef(null);
   const previewIframeRef = useRef(null);
   const [showRequiredHints, setShowRequiredHints] = useState(false);
@@ -47,7 +51,6 @@ const SendEmails = () => {
   const [iframeContentWidth, setIframeContentWidth] = useState(700);
 
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState({ type: "", message: "" });
 
   useEffect(() => {
     fetchInitialData();
@@ -68,6 +71,13 @@ const SendEmails = () => {
       ) {
         setIsTemplateDropdownOpen(false);
       }
+
+      if (
+        bccDropdownRef.current &&
+        !bccDropdownRef.current.contains(event.target)
+      ) {
+        setIsBccDropdownOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", handleOutsideClick);
@@ -84,7 +94,6 @@ const SendEmails = () => {
       setTemplates(Array.isArray(templatesRes.data) ? templatesRes.data : []);
     } catch (error) {
       console.error("Failed to load data:", error);
-      setStatus({ type: "error", message: "Failed to load initial data" });
     }
   };
 
@@ -103,6 +112,21 @@ const SendEmails = () => {
     );
   }, [activeContacts, searchQuery]);
 
+  const filteredBccContacts = useMemo(() => {
+    if (!bccSearch) return activeContacts;
+    const query = bccSearch.toLowerCase();
+    return activeContacts.filter(
+      (c) =>
+        (c.contact_name || "").toLowerCase().includes(query) ||
+        (c.contact_email || "").toLowerCase().includes(query),
+    );
+  }, [activeContacts, bccSearch]);
+
+  const selectedBccRecipients = useMemo(
+    () => activeContacts.filter((c) => bccContactIds.includes(c.contact_id)),
+    [activeContacts, bccContactIds],
+  );
+
   const toggleContact = (contactId) => {
     setSelectedContactIds((prev) =>
       prev.includes(contactId)
@@ -111,24 +135,49 @@ const SendEmails = () => {
     );
   };
 
+  const toggleBccField = () => {
+    if (showBccField) {
+      setShowBccField(false);
+      setBccContactIds([]);
+      setBccSearch("");
+      setIsBccDropdownOpen(false);
+      return;
+    }
+
+    setShowBccField(true);
+    setIsBccDropdownOpen(true);
+  };
+
+  const toggleBccContact = (contactId) => {
+    setBccContactIds((prev) =>
+      prev.includes(contactId)
+        ? prev.filter((id) => id !== contactId)
+        : [...prev, contactId],
+    );
+  };
+
+  const removeBccContact = (contactId) => {
+    setBccContactIds((prev) => prev.filter((id) => id !== contactId));
+  };
+
+  const clearBccSelection = () => {
+    setBccContactIds([]);
+    setBccSearch("");
+    setIsBccDropdownOpen(false);
+  };
+
   const handleSendEmail = async () => {
     setShowRequiredHints(true);
 
     if (!selectedTemplateId) {
-      setStatus({ type: "error", message: "Please select a template" });
       return;
     }
 
     if (selectedContactIds.length === 0) {
-      setStatus({
-        type: "error",
-        message: "Please select at least one contact",
-      });
       return;
     }
 
     setLoading(true);
-    setStatus({ type: "", message: "" });
 
     try {
       const template = templates.find(
@@ -137,15 +186,18 @@ const SendEmails = () => {
       if (!template) throw new Error("Template not found");
 
       const contactSegment = `ids:${selectedContactIds.join(",")}`;
+      const bccSegment =
+        showBccField && bccContactIds.length > 0
+          ? `ids:${bccContactIds.join(",")}`
+          : null;
 
       const campaignPayload = {
-        campaign_name: `Quick Send - ${new Date().toLocaleString()}`,
+        campaign_name: `Quick Send - ${template.template_name || "Untitled Template"}`,
         campaign_subject: template.template_subject || "No Subject",
         campaign_body: template.template_body || "",
         template_id: template.template_id,
-        sender_name: user?.name || "System",
-        sender_email: user?.email || "noreply@example.com",
         contact_segment: contactSegment,
+        bcc_segment: bccSegment,
         campaign_status: "draft",
       };
 
@@ -156,20 +208,16 @@ const SendEmails = () => {
         selectedContactIds,
       });
 
-      setStatus({ type: "success", message: "Emails sent successfully!" });
       setSelectedTemplateId("");
       setSelectedContactIds([]);
+      setShowBccField(false);
+      setBccContactIds([]);
+      setBccSearch("");
       setSearchQuery("");
       setShowRequiredHints(false);
       navigate("/email-logs");
     } catch (error) {
-      setStatus({
-        type: "error",
-        message:
-          error.response?.data?.message ||
-          error.message ||
-          "Failed to send emails",
-      });
+      console.error("Failed to send emails:", error);
     } finally {
       setLoading(false);
     }
@@ -406,39 +454,33 @@ const SendEmails = () => {
             </p>
           </div>
 
-          {status.message && (
-            <div
-              className={`mb-5 rounded-lg border px-4 py-3 text-sm flex items-center gap-2 ${
-                status.type === "success"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-rose-200 bg-rose-50 text-rose-700"
-              }`}
-            >
-              {status.type === "success" ? (
-                <CheckCircle2 size={16} />
-              ) : (
-                <AlertCircle size={16} />
-              )}
-              <span className="font-medium">{status.message}</span>
-            </div>
-          )}
-
           <section className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-5 items-start">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 lg:p-5 space-y-5">
+            <div className="bg-white rounded-md border border-gray-200 p-4 lg:p-5 space-y-5">
               <h2 className="text-sm font-semibold text-gray-800">
                 Email Options
               </h2>
 
               <div className="space-y-5">
                 <div className="relative" ref={recipientsDropdownRef}>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                    To
-                  </label>
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <label className="block text-xs font-medium text-gray-700">
+                      To
+                    </label>
+                    <button
+                      type="button"
+                      onClick={toggleBccField}
+                      className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700"
+                    >
+                      {showBccField ? "Remove Bcc" : "Add Bcc"}
+                    </button>
+                  </div>
                   <div
-                    className={`min-h-11 relative rounded-lg border bg-white transition-all px-2.5 py-2 flex flex-wrap items-center gap-2 pr-10 ${
+                    className={`min-h-11 relative rounded-md border bg-white transition-all px-2.5 py-2 flex flex-wrap items-center gap-2 pr-10 ${
                       isRecipientsMissing
                         ? "border-red-400 focus-within:border-red-500"
-                        : "border-gray-200 focus-within:border-indigo-300"
+                        : selectedContactIds.length === 0
+                          ? "border-gray-200 focus-within:border-indigo-300"
+                          : "border-indigo-200 bg-indigo-50"
                     }`}
                     onClick={() => {
                       setIsRecipientsDropdownOpen(true);
@@ -509,8 +551,8 @@ const SendEmails = () => {
                   )}
 
                   {isRecipientsDropdownOpen && (
-                    <div className="absolute z-30 left-0 right-0 mt-2 bg-white border border-gray-200 shadow-lg rounded-lg overflow-hidden">
-                      <div className="max-h-64 overflow-y-auto p-2">
+                    <div className="absolute z-30 left-0 right-0 mt-2 bg-white border border-gray-200 shadow-lg rounded-md overflow-hidden">
+                      <div className="slim-scrollbar max-h-64 overflow-y-auto">
                         {filteredContacts.length > 0 ? (
                           filteredContacts.map((contact) => (
                             <button
@@ -526,7 +568,7 @@ const SendEmails = () => {
                                 setSearchQuery("");
                                 setIsRecipientsDropdownOpen(true);
                               }}
-                              className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left text-sm ${
+                              className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-left text-sm ${
                                 selectedContactIds.includes(contact.contact_id)
                                   ? "bg-indigo-50 text-indigo-700"
                                   : "text-gray-700 hover:bg-gray-50"
@@ -555,6 +597,132 @@ const SendEmails = () => {
                   )}
                 </div>
 
+                {showBccField && (
+                  <div ref={bccDropdownRef} className="relative">
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                      Bcc
+                    </label>
+                    <div
+                      className={`min-h-11 rounded-md border bg-white px-2.5 py-2 transition-all ${
+                        bccContactIds.length === 0
+                          ? "border-gray-200 focus-within:border-indigo-300"
+                          : "border-indigo-200 bg-indigo-50"
+                      }`}
+                      onClick={() => {
+                        setIsBccDropdownOpen(true);
+                        bccInputRef.current?.focus();
+                      }}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="pt-1 text-gray-400">
+                          <UserRound className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {selectedBccRecipients.map((contact) => (
+                              <span
+                                key={contact.contact_id}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700"
+                              >
+                                <span className="truncate max-w-35">
+                                  {contact.contact_email}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeBccContact(contact.contact_id);
+                                  }}
+                                  className="text-indigo-500 transition-colors hover:text-indigo-700"
+                                  aria-label={`Remove ${contact.contact_email}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </span>
+                            ))}
+                            <input
+                              ref={bccInputRef}
+                              type="text"
+                              value={bccSearch}
+                              onFocus={() => setIsBccDropdownOpen(true)}
+                              onChange={(event) => {
+                                setBccSearch(event.target.value);
+                                setIsBccDropdownOpen(true);
+                              }}
+                              placeholder="Enter Bcc Emails"
+                              className="min-w-50 flex-1 border-none bg-transparent h-7 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        {(bccContactIds.length > 0 || bccSearch) && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              clearBccSelection();
+                            }}
+                            className="pt-1 text-gray-400 transition-colors hover:text-gray-600"
+                            aria-label="Clear Bcc"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isBccDropdownOpen && (
+                      <div className="absolute z-30 left-0 right-0 mt-2 bg-white border border-gray-200 shadow-lg rounded-md overflow-hidden">
+                        <div className="slim-scrollbar max-h-64 overflow-y-auto p-1">
+                          {filteredBccContacts.length > 0 ? (
+                            filteredBccContacts.map((contact) => {
+                              const isSelected = bccContactIds.includes(
+                                contact.contact_id,
+                              );
+
+                              return (
+                                <button
+                                  key={contact.contact_id}
+                                  type="button"
+                                  onClick={() => {
+                                    toggleBccContact(contact.contact_id);
+                                    setBccSearch("");
+                                    setIsBccDropdownOpen(true);
+                                  }}
+                                  className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-left ${
+                                    isSelected
+                                      ? "bg-indigo-50 text-indigo-700"
+                                      : "text-gray-700 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`truncate text-sm font-semibold ${
+                                        isSelected
+                                          ? "text-indigo-700"
+                                          : "text-gray-800"
+                                      }`}
+                                    >
+                                      {contact.contact_name || "Unnamed"}
+                                    </p>
+                                    <p className="truncate text-xs text-gray-500">
+                                      {contact.contact_email}
+                                    </p>
+                                  </div>
+                                  {isSelected && <CheckCircle2 size={14} />}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="py-8 text-center text-sm text-gray-500">
+                              No matching contacts
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">
                     Select Template
@@ -563,7 +731,7 @@ const SendEmails = () => {
                     <button
                       type="button"
                       onClick={() => setIsTemplateDropdownOpen((prev) => !prev)}
-                      className={`w-full rounded-lg border bg-white px-3 py-2.5 text-left text-sm text-gray-700 transition-all focus:outline-none flex items-center justify-between ${
+                      className={`w-full rounded-md border bg-white px-3 py-2.5 text-left text-sm text-gray-700 transition-all focus:outline-none flex items-center justify-between ${
                         isTemplateMissing
                           ? "border-red-400 focus:border-red-500"
                           : "border-gray-200 focus:border-indigo-300"
@@ -582,8 +750,8 @@ const SendEmails = () => {
                     )}
 
                     {isTemplateDropdownOpen && (
-                      <div className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                        <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+                      <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+                        <div className="slim-scrollbar max-h-72 overflow-y-auto space-y-1">
                           {templates.length === 0 ? (
                             <p className="px-3 py-2 text-sm text-gray-500">
                               No templates available
@@ -604,7 +772,7 @@ const SendEmails = () => {
                                     );
                                     setIsTemplateDropdownOpen(false);
                                   }}
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                     isSelected
                                       ? "bg-indigo-50 text-indigo-700 font-medium"
                                       : "text-gray-700 hover:bg-gray-50"
@@ -623,18 +791,17 @@ const SendEmails = () => {
 
                 <div className="pt-1">
                   <button
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleSendEmail}
                     disabled={loading}
                   >
-                    <Send size={16} />
                     {loading ? "Sending..." : "Send Email"}
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 lg:p-4">
+            <div className="bg-white rounded-md border border-gray-200 p-3 lg:p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 text-sm text-gray-700 font-medium">
                   <Eye className="h-4 w-4 text-gray-500" />
@@ -694,6 +861,30 @@ const SendEmails = () => {
                 </div>
               </div>
 
+              {showBccField && (
+                <div className="flex gap-2 mb-3 items-start pt-1">
+                  <span className="text-xs font-medium text-gray-700 min-w-5">
+                    Bcc:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                    {selectedBccRecipients.length > 0 ? (
+                      selectedBccRecipients.map((contact) => (
+                        <span
+                          key={contact.contact_id}
+                          className="text-[11px] font-medium text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md"
+                        >
+                          {contact.contact_email}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-400 italic">
+                        No Bcc recipients selected
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {selectedTemplate ? (
                 <div>
                   <div className="mb-2 border-t border-gray-200 pt-2">
@@ -701,7 +892,7 @@ const SendEmails = () => {
                       {selectedTemplate.template_subject}
                     </p>
                   </div>
-                  <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <div className="overflow-hidden rounded-md border border-gray-200">
                     <div
                       ref={previewViewportRef}
                       className="bg-white relative overflow-hidden"
@@ -727,7 +918,7 @@ const SendEmails = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-160 flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50">
+                <div className="h-160 flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50">
                   <FileText className="h-8 w-8 text-gray-300 mb-3" />
                   <h4 className="text-sm font-semibold text-gray-500">
                     No Template Selected

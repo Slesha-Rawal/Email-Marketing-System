@@ -43,23 +43,23 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
 
   return (
     <>
-      <div className="overflow-hidden rounded-md border border-indigo-200/60 bg-white shadow-sm shadow-indigo-100/20">
+      <div className="overflow-hidden rounded-md border border-indigo-200/60 bg-white">
         <table className="w-full text-sm" ref={tableRef}>
           <thead className="bg-gray-100 border-b border-gray-100">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
                 Name
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
                 Email
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
                 Status
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
                 Added Date
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
                 Actions
               </th>
             </tr>
@@ -89,11 +89,11 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                 </td>
                 <td className="px-4 py-3">
                   <span
-                    className={`inline-block rounded-full px-2.5 py-1 text-sm font-medium ${
+                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                       contact.contact_status === "active"
-                        ? "bg-indigo-100 text-indigo-700"
+                        ? "bg-green-100 text-green-700"
                         : contact.contact_status === "unsubscribed"
-                          ? "bg-yellow-100 text-yellow-700"
+                          ? "bg-red-100 text-red-700"
                           : "bg-red-100 text-red-700"
                     }`}
                   >
@@ -105,7 +105,7 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                 </td>
                 <td className="px-4 py-3">
                   {canManageContacts ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
                       <button
                         onClick={() => onEdit(contact)}
                         className="text-gray-400 hover:text-indigo-600"
@@ -125,6 +125,16 @@ function AllContactsTab({ contacts, canManageContacts, onEdit, onDelete }) {
                 </td>
               </tr>
             ))}
+            {contacts.length === 0 && (
+              <tr>
+                <td
+                  colSpan="5"
+                  className="px-6 py-12 text-center text-sm text-gray-500"
+                >
+                  No contacts found.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         <Pagination

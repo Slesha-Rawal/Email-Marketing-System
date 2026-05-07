@@ -1,14 +1,67 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Monitor, Smartphone } from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Eye } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import RichTextEditor from "../components/RichTextEditor.jsx";
 
+const VISUAL_TEMPLATE_MARKER_START = "<!-- VISUAL_BASE_CONTENT_START -->";
+const VISUAL_TEMPLATE_MARKER_END = "<!-- VISUAL_BASE_CONTENT_END -->";
 const defaultContent = "";
 const MIN_PREVIEW_HEIGHT = 240;
 const MAX_PREVIEW_HEIGHT = 1400;
 const MOBILE_PREVIEW_CONTENT_WIDTH = 375;
+
+const buildVisualBaseTemplate = (innerHtml = "", extraFooter = "") => {
+  const content = String(innerHtml || "").trim();
+
+  return `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Template</title>
+    <style>
+      img[data-image-align="left"] { display: block; margin-left: 0; margin-right: auto; }
+      img[data-image-align="center"] { display: block; margin-left: auto; margin-right: auto; }
+      img[data-image-align="right"] { display: block; margin-left: auto; margin-right: 0; }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#eef2f7;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#eef2f7;padding:24px 12px;font-family:Arial,sans-serif;color:#1f2937;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="680" style="max-width:680px;width:100%;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px;font-size:14px;line-height:1.65;color:#334155;">
+                ${VISUAL_TEMPLATE_MARKER_START}
+                ${content}
+                ${VISUAL_TEMPLATE_MARKER_END}
+              </td>
+            </tr>
+          </table>
+          ${extraFooter}
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`;
+};
+
+const extractVisualTemplateInnerHtml = (html = "") => {
+  const source = String(html || "");
+  const startIndex = source.indexOf(VISUAL_TEMPLATE_MARKER_START);
+  const endIndex = source.indexOf(VISUAL_TEMPLATE_MARKER_END);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    return null;
+  }
+
+  const contentStart = startIndex + VISUAL_TEMPLATE_MARKER_START.length;
+  return source.slice(contentStart, endIndex).trim();
+};
 
 const isRichTextEmpty = (html = "") => {
   const plainText = html
@@ -26,13 +79,17 @@ const hasUnsubscribeMarkup = (html = "") =>
 const TemplateBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const editTemplate = location.state?.template;
+  const { templateId } = useParams();
+  const [editTemplate, setEditTemplate] = useState(
+    location.state?.template || null,
+  );
 
   const [templateName, setTemplateName] = useState("");
   const [templateSubject, setTemplateSubject] = useState("");
   const [emailContent, setEmailContent] = useState(defaultContent);
-  const [previewMode, setPreviewMode] = useState("desktop");
+  const previewMode = "desktop";
   const [error, setError] = useState("");
+  const [showRequired, setShowRequired] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editorMode, setEditorMode] = useState("rich"); // "rich" or "html"
   const [iframeHeight, setIframeHeight] = useState(500);
@@ -108,17 +165,12 @@ const TemplateBuilder = () => {
 
   const applyPreviewMergeTags = (content = "") =>
     String(content || "")
-      .replace(/\{\{\s*name\s*\}\}/gi, "John Doe")
+      .replace(/\{\{\s*name\s*\}\}/gi, "{{name}}")
       .replace(/\{\{\s*email\s*\}\}/gi, "john.doe@example.com")
       .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, "/unsubscribe");
 
   const switchToRichEditor = () => {
-    // If the current content is raw HTML, show a warning
-    if (
-      editorMode === "html" &&
-      emailContent.trim() &&
-      isHtmlContent(emailContent)
-    ) {
+    if (editorMode === "html" && !isRichTextEmpty(emailContent)) {
       setShowHtmlWarning(true);
       return;
     }
@@ -126,8 +178,8 @@ const TemplateBuilder = () => {
   };
 
   const handleHtmlWarningContinue = () => {
-    // Clear the editor and switch to rich mode
-    setEmailContent("");
+    // Reset the editable area to the visual-editor default body.
+    setEmailContent(defaultContent);
     setEditorMode("rich");
     setShowHtmlWarning(false);
   };
@@ -138,7 +190,7 @@ const TemplateBuilder = () => {
   };
 
   const switchToHtmlEditor = () => {
-    if (editorMode === "rich") {
+    if (editorMode === "rich" && !isRichTextEmpty(emailContent)) {
       setShowVisualToHtmlWarning(true);
       return;
     }
@@ -147,6 +199,7 @@ const TemplateBuilder = () => {
   };
 
   const handleVisualToHtmlContinue = () => {
+    setEmailContent(defaultContent);
     setEditorMode("html");
     setShowVisualToHtmlWarning(false);
   };
@@ -217,6 +270,13 @@ const TemplateBuilder = () => {
     `;
     const shouldAddFooter = !hasUnsubscribeMarkup(previewContent);
 
+    if (editorMode === "rich") {
+      return buildVisualBaseTemplate(
+        previewContent,
+        shouldAddFooter ? unsubscribeFooter : "",
+      );
+    }
+
     if (!previewContent) {
       return `
         <!DOCTYPE html>
@@ -264,9 +324,9 @@ const TemplateBuilder = () => {
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <style>
-            body { 
-              margin: 0; 
-              padding: 0; 
+            body {
+              margin: 0;
+              padding: 0;
               font-family: sans-serif;
               font-size: 13px;
               color: #222;
@@ -288,39 +348,100 @@ const TemplateBuilder = () => {
   };
 
   useEffect(() => {
+    const stateTemplate = location.state?.template || null;
+
+    if (stateTemplate && !templateId) {
+      setEditTemplate(stateTemplate);
+      return;
+    }
+
+    if (!templateId) {
+      setEditTemplate(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchTemplate = async () => {
+      try {
+        const response = await api.get(`/templates/${templateId}`);
+        if (!cancelled) {
+          setEditTemplate(response.data || null);
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          setEditTemplate(null);
+          setError(
+            requestError.response?.data?.message || "Failed to load template",
+          );
+        }
+      }
+    };
+
+    fetchTemplate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId, location.state]);
+
+  useEffect(() => {
     if (editTemplate) {
       setTemplateName(editTemplate.template_name);
       setTemplateSubject(editTemplate.template_subject);
-      setEmailContent(editTemplate.template_body);
-      // Preserve editor mode: detect if template body is HTML or rich text
-      if (
-        editTemplate.template_body &&
-        isHtmlContent(editTemplate.template_body)
-      ) {
-        setEditorMode("html");
-      } else {
+
+      const extractedVisualContent = extractVisualTemplateInnerHtml(
+        editTemplate.template_body,
+      );
+
+      if (extractedVisualContent !== null) {
+        setEmailContent(extractedVisualContent || defaultContent);
         setEditorMode("rich");
+      } else {
+        setEmailContent(editTemplate.template_body);
+        if (
+          editTemplate.template_body &&
+          isHtmlContent(editTemplate.template_body)
+        ) {
+          setEditorMode("html");
+        } else {
+          setEditorMode("rich");
+        }
       }
+    } else {
+      setTemplateName("");
+      setTemplateSubject("");
+      setEmailContent(defaultContent);
+      setEditorMode("rich");
     }
   }, [editTemplate]);
 
+  const getContentForSave = () => {
+    if (editorMode === "rich") {
+      return buildVisualBaseTemplate(emailContent);
+    }
+
+    return emailContent.trim();
+  };
+
   const handleSave = async () => {
+    setShowRequired(true);
+    setError("");
+
     if (
       !templateName.trim() ||
       !templateSubject.trim() ||
       isRichTextEmpty(emailContent)
     ) {
-      setError("Template name, subject, and body are required");
       return;
     }
 
-    setError("");
     setIsSaving(true);
 
     const payload = {
       template_name: templateName.trim(),
       template_subject: templateSubject.trim(),
-      template_body: emailContent.trim(),
+      template_body: getContentForSave(),
     };
 
     try {
@@ -339,6 +460,10 @@ const TemplateBuilder = () => {
     }
   };
 
+  const nameRequired = showRequired && !templateName.trim();
+  const subjectRequired = showRequired && !templateSubject.trim();
+  const bodyRequired = showRequired && isRichTextEmpty(emailContent);
+
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900 font-sans">
       <Sidebar />
@@ -352,9 +477,8 @@ const TemplateBuilder = () => {
                 Switch to Visual Editor?
               </h3>
               <p className="text-sm text-gray-600 mt-2">
-                The current HTML content cannot be properly converted to the
-                Visual Editor. The editor will be cleared when you switch. Do
-                you want to continue?
+                If you switch from HTML Code to Visual Editor, the Visual editor
+                will be blank. Do you want to continue?
               </p>
             </div>
             <div className="flex items-center gap-3 pt-2">
@@ -414,51 +538,65 @@ const TemplateBuilder = () => {
           </div>
 
           <section className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-5 items-start">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 lg:p-5 space-y-5">
+            <div className="bg-white rounded-md border border-gray-200 p-4 lg:p-5 space-y-5">
               <h2 className="text-sm font-semibold text-gray-800">
                 Email Template Information
               </h2>
 
               <div className="space-y-5">
-                {error && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-                    <span className="font-bold">Error:</span> {error}
-                  </div>
-                )}
-
                 <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
                       Name
                     </label>
-                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                    <div
+                      className={`relative rounded-md border bg-white transition-all ${
+                        nameRequired
+                          ? "border-red-400 focus-within:border-red-400"
+                          : "border-gray-200 focus-within:border-indigo-300"
+                      }`}
+                    >
                       <input
                         type="text"
                         value={templateName}
-                        onChange={(event) =>
-                          setTemplateName(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setTemplateName(event.target.value);
+                          setError("");
+                        }}
                         placeholder="Enter name of Template"
-                        className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                        className="w-full rounded-md border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
                       />
                     </div>
+                    {nameRequired && (
+                      <p className="mt-1 text-sm text-red-500">Required</p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
                       Subject
                     </label>
-                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
+                    <div
+                      className={`relative rounded-md border bg-white transition-all ${
+                        subjectRequired
+                          ? "border-red-400 focus-within:border-red-400"
+                          : "border-gray-200 focus-within:border-indigo-300"
+                      }`}
+                    >
                       <input
                         type="text"
                         value={templateSubject}
-                        onChange={(event) =>
-                          setTemplateSubject(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setTemplateSubject(event.target.value);
+                          setError("");
+                        }}
                         placeholder="Enter subject"
-                        className="w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                        className="w-full rounded-md border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
                       />
                     </div>
+                    {subjectRequired && (
+                      <p className="mt-1 text-sm text-red-500">Required</p>
+                    )}
                   </div>
                 </div>
 
@@ -494,7 +632,13 @@ const TemplateBuilder = () => {
                   </div>
 
                   {editorMode === "rich" ? (
-                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300 overflow-hidden">
+                    <div
+                      className={`relative rounded-lg border bg-white transition-all overflow-hidden ${
+                        bodyRequired
+                          ? "border-red-400 focus-within:border-red-400"
+                          : "border-gray-200 focus-within:border-indigo-300"
+                      }`}
+                    >
                       <RichTextEditor
                         value={emailContent}
                         onChange={setEmailContent}
@@ -502,15 +646,27 @@ const TemplateBuilder = () => {
                       />
                     </div>
                   ) : (
-                    <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300 overflow-hidden">
+                    <div
+                      className={`relative rounded-lg border bg-white transition-all overflow-hidden ${
+                        bodyRequired
+                          ? "border-red-400 focus-within:border-red-400"
+                          : "border-gray-200 focus-within:border-indigo-300"
+                      }`}
+                    >
                       <textarea
                         value={emailContent}
-                        onChange={(e) => setEmailContent(e.target.value)}
+                        onChange={(e) => {
+                          setEmailContent(e.target.value);
+                          setError("");
+                        }}
                         className="block h-80 w-full border-none bg-gray-900 px-4 py-3.5 text-[13px] font-mono leading-relaxed text-gray-100 focus:outline-none overflow-auto resize-y [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                         placeholder="Enter body"
                         spellCheck="false"
                       />
                     </div>
+                  )}
+                  {bodyRequired && (
+                    <p className="mt-1 text-sm text-red-500">Required</p>
                   )}
                 </div>
 
@@ -526,39 +682,18 @@ const TemplateBuilder = () => {
                         ? "Update Email Template"
                         : "Add Template"}
                   </button>
+                  {error && (
+                    <p className="mt-2 text-sm text-red-500">{error}</p>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 lg:p-4">
+            <div className="bg-white rounded-md border border-gray-200 p-3 lg:p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 text-sm text-gray-700 font-medium">
-                  <Monitor className="h-4 w-4 text-gray-500" />
+                  <Eye className="h-4 w-4 text-gray-500" />
                   Preview
-                </div>
-                <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
-                  <button
-                    onClick={() => setPreviewMode("desktop")}
-                    className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium ${
-                      previewMode === "desktop"
-                        ? "bg-indigo-600 text-white"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    <Monitor className="h-3.5 w-3.5" />
-                    Desktop
-                  </button>
-                  <button
-                    onClick={() => setPreviewMode("mobile")}
-                    className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium ${
-                      previewMode === "mobile"
-                        ? "bg-indigo-600 text-white"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    Mobile
-                  </button>
                 </div>
               </div>
 

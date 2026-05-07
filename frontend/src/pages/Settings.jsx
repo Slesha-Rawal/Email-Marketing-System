@@ -1,39 +1,34 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Save, Settings as SettingsIcon } from "lucide-react";
+import { Settings as SettingsIcon } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
-
-const FIXED_SENDER_NAME = "HomeSchool.Asia";
 
 const defaultSmtpSettings = {
   emailProvider: "gmail",
   smtpServer: "",
   smtpPort: "587",
+  smtpSecure: false,
   usernameEmail: "",
   password: "",
-  senderName: FIXED_SENDER_NAME,
+  senderName: "",
+  senderEmail: "",
+  replyToEmail: "",
 };
 
 function SettingsPage() {
   const [settingsForm, setSettingsForm] = useState(defaultSmtpSettings);
-  const [settingsMessage, setSettingsMessage] = useState("");
   const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
   const [isLoadingSmtpConfig, setIsLoadingSmtpConfig] = useState(true);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   useEffect(() => {
     const loadSmtpConfig = async () => {
       try {
         const response = await api.get("/auth/smtp-config");
-        setSettingsForm((prev) => ({
-          ...prev,
-          ...response.data,
-          senderName: FIXED_SENDER_NAME,
-        }));
+        setSettingsForm((prev) => ({ ...prev, ...response.data }));
       } catch (error) {
-        setSettingsError(
-          error.response?.data?.message ||
-            "Unable to load SMTP settings from environment",
-        );
+        console.error("Unable to load SMTP settings:", error);
       } finally {
         setIsLoadingSmtpConfig(false);
       }
@@ -43,9 +38,9 @@ function SettingsPage() {
   }, []);
 
   const shellWrapperClass =
-    "relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300";
+    "relative rounded-md border border-gray-200 bg-white transition-all focus-within:border-indigo-300";
   const shellInputClass =
-    "w-full rounded-lg border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none";
+    "w-full rounded-md border-none bg-transparent px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none";
 
   const providerHint = useMemo(() => {
     if (settingsForm.emailProvider === "gmail") {
@@ -69,8 +64,8 @@ function SettingsPage() {
 
   const handleSettingsSave = (event) => {
     event.preventDefault();
-    setSettingsMessage("");
     setSettingsError("");
+    setSettingsSuccess("");
 
     if (
       !settingsForm.smtpServer.trim() ||
@@ -83,28 +78,51 @@ function SettingsPage() {
       return;
     }
 
-    setSettingsMessage(
-      "SMTP fields are prefilled from backend environment credentials.",
-    );
+    setIsSavingSettings(true);
+
+    api
+      .put("/auth/smtp-config", {
+        smtpServer: settingsForm.smtpServer,
+        smtpPort: settingsForm.smtpPort,
+        smtpSecure: settingsForm.smtpSecure,
+        usernameEmail: settingsForm.usernameEmail,
+        password: settingsForm.password,
+        senderName: settingsForm.senderName,
+        senderEmail: settingsForm.senderEmail || settingsForm.usernameEmail,
+        replyToEmail:
+          settingsForm.replyToEmail ||
+          settingsForm.senderEmail ||
+          settingsForm.usernameEmail,
+      })
+      .then((response) => {
+        if (response.data?.config) {
+          setSettingsForm((prev) => ({
+            ...prev,
+            ...response.data.config,
+          }));
+        }
+      })
+      .catch((error) => {
+        setSettingsError(
+          error.response?.data?.message ||
+            "Unable to save SMTP settings right now.",
+        );
+      })
+      .finally(() => {
+        setIsSavingSettings(false);
+      });
   };
 
   const handleSettingsReset = async () => {
-    setSettingsMessage("");
     setSettingsError("");
+    setSettingsSuccess("");
 
     try {
       setIsLoadingSmtpConfig(true);
       const response = await api.get("/auth/smtp-config");
-      setSettingsForm((prev) => ({
-        ...prev,
-        ...response.data,
-        senderName: FIXED_SENDER_NAME,
-      }));
+      setSettingsForm((prev) => ({ ...prev, ...response.data }));
     } catch (error) {
-      setSettingsError(
-        error.response?.data?.message ||
-          "Unable to reload SMTP settings from environment",
-      );
+      console.error("Unable to reload SMTP settings:", error);
     } finally {
       setIsLoadingSmtpConfig(false);
     }
@@ -118,12 +136,9 @@ function SettingsPage() {
         <main className="p-6 lg:p-8 space-y-6 max-w-7xl">
           <section>
             <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Manage email service configuration.
-            </p>
           </section>
 
-          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <section className="rounded-md border border-indigo-200/60 bg-white p-4 overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4 flex items-center gap-2">
               <SettingsIcon className="h-5 w-5 text-gray-500" />
               <h2 className="text-xl font-semibold text-gray-900">
@@ -132,11 +147,6 @@ function SettingsPage() {
             </div>
 
             <div className="px-6 py-5 space-y-5">
-              {settingsMessage && (
-                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                  {settingsMessage}
-                </div>
-              )}
               {settingsError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {settingsError}
@@ -145,7 +155,7 @@ function SettingsPage() {
 
               {isLoadingSmtpConfig && (
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
-                  Loading SMTP credentials from environment...
+                  Loading SMTP configuration...
                 </div>
               )}
 
@@ -257,13 +267,58 @@ function SettingsPage() {
                       <input
                         type="text"
                         value={settingsForm.senderName}
-                        readOnly
+                        onChange={(event) =>
+                          updateSettingsField("senderName", event.target.value)
+                        }
                         className={shellInputClass}
-                        placeholder="HomeSchool.Asia"
+                        placeholder="Company Name"
                       />
                     </div>
                     <p className="mt-1 text-xs text-gray-500">
-                      Fixed sender name for outgoing emails.
+                      This name is shown in outgoing email sender details.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Sender Email
+                    </label>
+                    <div className={shellWrapperClass}>
+                      <input
+                        type="email"
+                        value={settingsForm.senderEmail}
+                        onChange={(event) =>
+                          updateSettingsField("senderEmail", event.target.value)
+                        }
+                        className={shellInputClass}
+                        placeholder="sender@example.com"
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Mandatory
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Reply-To Email
+                    </label>
+                    <div className={shellWrapperClass}>
+                      <input
+                        type="email"
+                        value={settingsForm.replyToEmail}
+                        onChange={(event) =>
+                          updateSettingsField(
+                            "replyToEmail",
+                            event.target.value,
+                          )
+                        }
+                        className={shellInputClass}
+                        placeholder="replyto@example.com"
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Optional (If blank, sender email will be used).
                     </p>
                   </div>
                 </div>
@@ -278,10 +333,10 @@ function SettingsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
+                    disabled={isSavingSettings}
+                    className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
                   >
-                    <Save className="h-4 w-4" />
-                    Save Settings
+                    {isSavingSettings ? "Saving..." : "Save Settings"}
                   </button>
                 </div>
               </form>

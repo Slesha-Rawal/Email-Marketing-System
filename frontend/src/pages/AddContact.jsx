@@ -12,6 +12,7 @@ import {
   FolderPlus,
   SkipForward,
 } from "lucide-react";
+import { toast } from "react-toastify";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 
@@ -20,7 +21,10 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const AddContact = () => {
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [nameFieldError, setNameFieldError] = useState("");
   const [email, setEmail] = useState("");
+  const [emailFieldError, setEmailFieldError] = useState("");
+  const [showSingleFieldErrors, setShowSingleFieldErrors] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [verifySingle, setVerifySingle] = useState(false);
   const [verifyImport, setVerifyImport] = useState(false);
@@ -33,8 +37,6 @@ const AddContact = () => {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFileForGroup, setPendingFileForGroup] = useState(null);
   const [pendingAction, setPendingAction] = useState(null); // single | upload
@@ -52,6 +54,38 @@ const AddContact = () => {
     fetchGroups();
   }, []);
 
+  const getNameValidationError = (value) => {
+    if (!String(value || "").trim()) {
+      return "Name is required";
+    }
+
+    return "";
+  };
+
+  const getEmailValidationError = (value) => {
+    const normalizedEmail = String(value || "").trim();
+
+    if (!normalizedEmail) {
+      return "Email is required";
+    }
+
+    if (!emailPattern.test(normalizedEmail)) {
+      return "Enter a valid email address";
+    }
+
+    return "";
+  };
+
+  const getApiErrorMessage = (requestError, fallbackMessage) => {
+    const apiMessage = String(
+      requestError?.response?.data?.message ||
+        requestError?.response?.data?.error ||
+        "",
+    ).trim();
+
+    return apiMessage || fallbackMessage;
+  };
+
   const openGroupModalForAction = (action) => {
     setSelectedOption("skip");
     setSelectedGroupId("");
@@ -62,16 +96,13 @@ const AddContact = () => {
   };
 
   const handleAddContactClick = () => {
-    setMessage("");
-    setError("");
+    setShowSingleFieldErrors(true);
+    const nextNameError = getNameValidationError(name);
+    const nextEmailError = getEmailValidationError(email);
+    setNameFieldError(nextNameError);
+    setEmailFieldError(nextEmailError);
 
-    if (!name.trim() || !email.trim()) {
-      setError("Name and email are required");
-      return;
-    }
-
-    if (!emailPattern.test(email.trim())) {
-      setError("Enter a valid email address");
+    if (nextNameError || nextEmailError) {
       return;
     }
 
@@ -79,15 +110,20 @@ const AddContact = () => {
   };
 
   const addSingleContact = async (groupAction, groupValue) => {
-    setMessage("");
-    setError("");
-
-    const response = await api.post("/contacts", {
-      contact_name: name.trim(),
-      contact_email: email.trim().toLowerCase(),
-      contact_status: "active",
-      verify: verifySingle,
-    });
+    const response = await api.post(
+      "/contacts",
+      {
+        contact_name: name.trim(),
+        contact_email: email.trim().toLowerCase(),
+        contact_status: "active",
+        verify: verifySingle,
+      },
+      {
+        meta: {
+          skipErrorToast: true,
+        },
+      },
+    );
 
     const newContactId = response?.data?.id;
 
@@ -95,24 +131,42 @@ const AddContact = () => {
       let targetGroupId = groupAction === "existing" ? groupValue : null;
 
       if (groupAction === "new") {
-        const createdGroup = await api.post("/contact-groups", {
-          group_name: groupValue,
-        });
+        const createdGroup = await api.post(
+          "/contact-groups",
+          {
+            group_name: groupValue,
+          },
+          {
+            meta: {
+              skipErrorToast: true,
+            },
+          },
+        );
         targetGroupId = createdGroup?.data?.group_id;
       }
 
       if (targetGroupId) {
-        await api.post(`/contact-groups/${targetGroupId}/contacts`, {
-          contactIds: [newContactId],
-        });
+        await api.post(
+          `/contact-groups/${targetGroupId}/contacts`,
+          {
+            contactIds: [newContactId],
+          },
+          {
+            meta: {
+              skipErrorToast: true,
+            },
+          },
+        );
       }
     }
 
     try {
       await fetchGroups();
-      setMessage("Contact added successfully");
       setName("");
+      setNameFieldError("");
       setEmail("");
+      setEmailFieldError("");
+      setShowSingleFieldErrors(false);
       setTimeout(() => navigate("/contact"), 800);
     } catch {
       // No-op, message flow should continue even if groups refresh fails.
@@ -122,12 +176,20 @@ const AddContact = () => {
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
-      if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-        setError("Only CSV files are allowed");
+      const normalizedName = String(file.name || "").toLowerCase();
+      const normalizedType = String(file.type || "").toLowerCase();
+      const isCsv =
+        normalizedType === "text/csv" || normalizedName.endsWith(".csv");
+      const isXlsx =
+        normalizedType ===
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        normalizedName.endsWith(".xlsx");
+
+      if (!isCsv && !isXlsx) {
+        toast.error("Only CSV and XLSX files are allowed");
         return;
       }
       setSelectedFile(file);
-      setError("");
     }
   };
 
@@ -141,7 +203,7 @@ const AddContact = () => {
 
   const handleUploadClick = async () => {
     if (!selectedFile) {
-      setError("Please select a CSV file first");
+      toast.error("Please select a CSV or XLSX file first");
       return;
     }
     setPendingFileForGroup(selectedFile);
@@ -165,10 +227,15 @@ const AddContact = () => {
           }
           closeGroupModal();
         } catch (requestError) {
-          setError(
-            requestError.response?.data?.error ||
-              requestError.response?.data?.message ||
-              "Failed to continue",
+          console.error(
+            "Failed to continue with contact action:",
+            requestError,
+          );
+          toast.error(
+            getApiErrorMessage(
+              requestError,
+              "Failed to continue with contact action",
+            ),
           );
         }
       } else if (selectedOption === "existing") {
@@ -178,7 +245,7 @@ const AddContact = () => {
       }
     } else if (modalStep === "existing") {
       if (!selectedGroupId) {
-        setError("Please select a group");
+        toast.error("Please select a group");
         return;
       }
       try {
@@ -189,15 +256,20 @@ const AddContact = () => {
         }
         closeGroupModal();
       } catch (requestError) {
-        setError(
-          requestError.response?.data?.error ||
-            requestError.response?.data?.message ||
-            "Failed to continue",
+        console.error(
+          "Failed to continue with existing group action:",
+          requestError,
+        );
+        toast.error(
+          getApiErrorMessage(
+            requestError,
+            "Failed to continue with existing group action",
+          ),
         );
       }
     } else if (modalStep === "new") {
       if (!newGroupName.trim()) {
-        setError("Please enter a group name");
+        toast.error("Please enter a group name");
         return;
       }
       try {
@@ -208,10 +280,15 @@ const AddContact = () => {
         }
         closeGroupModal();
       } catch (requestError) {
-        setError(
-          requestError.response?.data?.error ||
-            requestError.response?.data?.message ||
-            "Failed to continue",
+        console.error(
+          "Failed to continue with new group action:",
+          requestError,
+        );
+        toast.error(
+          getApiErrorMessage(
+            requestError,
+            "Failed to continue with new group action",
+          ),
         );
       }
     }
@@ -219,12 +296,10 @@ const AddContact = () => {
 
   const performUpload = async (groupAction, groupValue) => {
     if (!pendingFileForGroup) {
-      setError("No file selected");
+      toast.error("No file selected");
       return;
     }
 
-    setMessage("");
-    setError("");
     setIsUploading(true);
 
     const formData = new FormData();
@@ -242,16 +317,21 @@ const AddContact = () => {
         headers: {
           "Content-Type": "multipart/form-data",
         },
+        meta: {
+          skipErrorToast: true,
+        },
       });
 
-      setMessage(response.data.message);
       setPendingFileForGroup(null);
       setSelectedFile(null);
       const input = document.getElementById("file-upload-dropzone");
       if (input) input.value = "";
       setTimeout(() => navigate("/contact"), 1000);
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Failed to upload file");
+      console.error("Failed to upload contacts:", requestError);
+      toast.error(
+        getApiErrorMessage(requestError, "Failed to upload contacts"),
+      );
     } finally {
       setIsUploading(false);
     }
@@ -272,50 +352,71 @@ const AddContact = () => {
               </p>
             </header>
 
-            {message && (
-              <div className="mb-6 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700 border border-green-200">
-                <Check className="h-4 w-4" />
-                {message}
-              </div>
-            )}
-            {error && (
-              <div className="mb-6 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700 border border-red-200">
-                <X className="h-4 w-4" />
-                {error}
-              </div>
-            )}
-
             {/* CARD 1: ADD ONE CONTACT */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 mb-6">
+            <div className="bg-white rounded-md border border-gray-200 p-8 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">
                 Add one Contact
               </h2>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    <User className="w-5 h-5" />
+              <div className="grid grid-cols-2 items-start gap-4 mb-6">
+                <div>
+                  <div className="relative min-h-11 rounded-md border border-gray-200 bg-white px-2.5 py-2 transition-all focus-within:border-indigo-300">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (showSingleFieldErrors) {
+                          setNameFieldError(
+                            getNameValidationError(e.target.value),
+                          );
+                        }
+                      }}
+                      placeholder="Enter Name"
+                      className="h-7 w-full rounded-md border-none bg-transparent pl-8 pr-2 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Enter Name"
-                    className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
-                  />
+                  {nameFieldError ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {nameFieldError}
+                    </p>
+                  ) : null}
                 </div>
 
-                <div className="relative rounded-lg border border-gray-200 bg-white transition-all focus-within:border-indigo-300">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    <Mail className="w-5 h-5" />
+                <div>
+                  <div
+                    className={`relative min-h-11 rounded-md border bg-white px-2.5 py-2 transition-all ${
+                      emailFieldError
+                        ? "border-red-300 focus-within:border-red-400"
+                        : "border-gray-200 focus-within:border-indigo-300"
+                    }`}
+                  >
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Mail className="w-5 h-5" />
+                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (showSingleFieldErrors) {
+                          setEmailFieldError(
+                            getEmailValidationError(e.target.value),
+                          );
+                        }
+                      }}
+                      placeholder="Enter Email Address"
+                      className="h-7 w-full rounded-md border-none bg-transparent pl-8 pr-2 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
+                    />
                   </div>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter Email Address"
-                    className="w-full rounded-lg border-none bg-transparent pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:outline-none"
-                  />
+                  {emailFieldError ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {emailFieldError}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -346,14 +447,14 @@ const AddContact = () => {
             </div>
 
             {/* CARD 2: ADD MULTIPLE CONTACTS */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
+            <div className="bg-white rounded-md border border-gray-200 p-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">
                 Add Multiple Contacts
               </h2>
 
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-900 mb-3">
-                  CSV file
+                  CSV or XLSX file
                 </label>
                 <div
                   onClick={() =>
@@ -399,10 +500,10 @@ const AddContact = () => {
                         <Cloud className="w-10 h-10" />
                       </div>
                       <div className="text-sm font-medium text-gray-900">
-                        Upload a file
+                        Upload a CSV or XLSX file
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        CSV or Excel (XLSX) files only
+                        CSV and XLSX files only
                       </div>
                     </>
                   )}
@@ -533,7 +634,7 @@ const AddContact = () => {
                 <select
                   value={selectedGroupId}
                   onChange={(e) => setSelectedGroupId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-indigo-300 focus:outline-none"
                 >
                   <option value="">Choose a group...</option>
                   {groups.map((g) => (
@@ -555,7 +656,7 @@ const AddContact = () => {
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                   placeholder="Enter group name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-500 focus:border-indigo-300 focus:outline-none"
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-500 focus:border-indigo-300 focus:outline-none"
                 />
               </div>
             )}

@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { KeyRound } from "lucide-react";
+import api from "../lib/api.js";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    setMessage("");
     setError("");
 
     if (!email) {
@@ -17,8 +17,19 @@ function ForgotPassword() {
       return;
     }
 
-    // TODO: Implement password reset logic
-    setMessage("Password reset link has been sent to your email");
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/forgot-password/request-reset-link", {
+        email: email.trim().toLowerCase(),
+      });
+    } catch (requestError) {
+      setError(
+        requestError.response?.data?.message ||
+          "Unable to send reset link right now",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -32,16 +43,11 @@ function ForgotPassword() {
             Reset Password
           </h1>
           <p className="text-sm text-gray-500">
-            Enter your email to receive a reset link.
+            Enter your email to receive a secure password reset link.
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
-          {message && (
-            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              {message}
-            </div>
-          )}
           {error && (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
@@ -67,14 +73,15 @@ function ForgotPassword() {
 
           <button
             type="submit"
+            disabled={isSubmitting}
             className="mb-4 w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
           >
-            Send Reset Link
+            {isSubmitting ? "Please wait..." : "Send Reset Link"}
           </button>
 
           <div className="text-center">
             <Link
-              to="/"
+              to="/login"
               className="text-sm text-indigo-600 hover:text-indigo-700"
             >
               Back to Login

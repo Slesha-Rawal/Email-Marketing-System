@@ -7,14 +7,27 @@ const AuthContext = createContext(null);
 const readStoredAuth = () => {
   try {
     const storedValue = localStorage.getItem(AUTH_STORAGE_KEY);
-    return storedValue ? JSON.parse(storedValue) : { user: null };
+    const parsed = storedValue ? JSON.parse(storedValue) : { user: null };
+    const user = parsed?.user ?? null;
+    const token = parsed?.token ?? user?.token ?? null;
+
+    if (!user?.userId) {
+      return { user: null, token: null };
+    }
+
+    return { user, token: token || null };
   } catch (error) {
-    return { user: null };
+    return { user: null, token: null };
   }
 };
 
 const persistAuth = (authState) => {
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authState));
+};
+
+const isSessionInvalidError = (error) => {
+  const status = Number(error?.response?.status || 0);
+  return status === 401 || status === 403;
 };
 
 function AuthProvider({ children }) {
@@ -23,22 +36,38 @@ function AuthProvider({ children }) {
 
   useEffect(() => {
     const bootstrap = async () => {
-      if (!authState.user?.userId) {
-        setIsBootstrapping(false);
-        return;
-      }
-
       try {
-        const response = await api.get("/auth/me");
+        const response = await api.post(
+          "/auth/refresh",
+          {},
+          {
+            meta: {
+              skipSuccessToast: true,
+              skipErrorToast: true,
+              skipAuthRefresh: true,
+            },
+          },
+        );
+
+        const refreshedToken = response?.data?.token ?? null;
+        const refreshedUser = response?.data?.user ?? null;
+
+        if (!refreshedToken || !refreshedUser?.userId) {
+          throw new Error("Invalid refresh response");
+        }
+
         const nextState = {
-          user: response.data.user,
-          token: authState.token ?? authState.user?.token ?? null,
+          user: refreshedUser,
+          token: refreshedToken,
         };
+
         setAuthState(nextState);
         persistAuth(nextState);
       } catch (error) {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        setAuthState({ user: null });
+        if (isSessionInvalidError(error)) {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          setAuthState({ user: null, token: null });
+        }
       } finally {
         setIsBootstrapping(false);
       }
@@ -47,17 +76,49 @@ function AuthProvider({ children }) {
     bootstrap();
   }, []);
 
+  useEffect(() => {
+    const handleAuthCleared = () => {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      setAuthState({ user: null, token: null });
+    };
+
+    window.addEventListener("ems:auth-cleared", handleAuthCleared);
+
+    return () => {
+      window.removeEventListener("ems:auth-cleared", handleAuthCleared);
+    };
+  }, []);
+
   const login = (payload) => {
-    const user = payload?.user ?? payload;
-    const token = payload?.token ?? user?.token ?? null;
-    const nextState = { user, token };
-    setAuthState(nextState);
-    persistAuth(nextState);
+    setAuthState((previousState) => {
+      const user = payload?.user ?? payload;
+      const token =
+        payload?.token ?? user?.token ?? previousState?.token ?? null;
+      const nextState = { user, token };
+      persistAuth(nextState);
+      return nextState;
+    });
   };
 
-  const logout = () => {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    setAuthState({ user: null });
+  const logout = async () => {
+    try {
+      await api.post(
+        "/auth/logout",
+        {},
+        {
+          meta: {
+            skipSuccessToast: true,
+            skipErrorToast: true,
+            skipAuthRefresh: true,
+          },
+        },
+      );
+    } catch (error) {
+      // Clear local auth state even if backend logout fails.
+    } finally {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      setAuthState({ user: null, token: null });
+    }
   };
 
   return (
@@ -65,7 +126,7 @@ function AuthProvider({ children }) {
       value={{
         ...authState,
         token: authState.token ?? authState.user?.token ?? null,
-        isAuthenticated: Boolean(authState.user?.userId),
+        isAuthenticated: Boolean(authState.user?.userId && authState.token),
         isBootstrapping,
         login,
         logout,

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Calendar,
   Check,
   ChevronDown,
   Edit2,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import Pagination from "../Pagination.jsx";
 import api from "../../lib/api.js";
+import DateRangeFilter from "./DateRangeFilter.jsx";
 
 function GroupContactsTab({
   canManageContacts,
@@ -34,6 +34,7 @@ function GroupContactsTab({
   onEditContact,
   onDeleteContact,
   onClearSelectedContacts,
+  groupDeleteVersion,
 }) {
   const tableRef = useRef(null);
   const [viewMode, setViewMode] = useState("list"); // list or details
@@ -245,15 +246,6 @@ function GroupContactsTab({
     { value: "bounced", label: "Bounced" },
   ];
 
-  const groupDateOptions = [
-    { value: "all", label: "Added Date" },
-    { value: "today", label: "Today" },
-    { value: "7d", label: "Last 7 days" },
-    { value: "30d", label: "Last 30 days" },
-    { value: "oldest", label: "Oldest first" },
-    { value: "range", label: "Custom range" },
-  ];
-
   const selectedGroupStatusLabel =
     groupStatusOptions.find((option) => option.value === groupStatusFilter)
       ?.label || "Select Status";
@@ -261,8 +253,7 @@ function GroupContactsTab({
   const selectedGroupDateLabel =
     groupAddedDateFilter === "range" && (groupDateFrom || groupDateTo)
       ? `${groupDateFrom || "Start"} - ${groupDateTo || "End"}`
-      : groupDateOptions.find((option) => option.value === groupAddedDateFilter)
-          ?.label || "Added Date";
+      : "Added Date";
 
   const matchesGroupAddedDateFilter = (dateValue) => {
     if (groupAddedDateFilter === "all") {
@@ -272,33 +263,6 @@ function GroupContactsTab({
     const createdDate = new Date(dateValue);
     if (Number.isNaN(createdDate.getTime())) {
       return false;
-    }
-
-    const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-
-    if (groupAddedDateFilter === "today") {
-      return createdDate >= startOfToday;
-    }
-
-    if (groupAddedDateFilter === "7d") {
-      const sevenDaysAgo = new Date(startOfToday);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      return createdDate >= sevenDaysAgo;
-    }
-
-    if (groupAddedDateFilter === "30d") {
-      const thirtyDaysAgo = new Date(startOfToday);
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return createdDate >= thirtyDaysAgo;
-    }
-
-    if (groupAddedDateFilter === "oldest") {
-      return true;
     }
 
     if (groupAddedDateFilter === "range") {
@@ -359,12 +323,6 @@ function GroupContactsTab({
           contact.contact_status === groupStatusFilter) &&
         matchesGroupAddedDateFilter(contact.created_at),
     );
-
-    if (groupAddedDateFilter === "oldest") {
-      return [...filtered].sort(
-        (a, b) => new Date(a.created_at) - new Date(b.created_at),
-      );
-    }
 
     return [...filtered].sort(
       (a, b) => new Date(b.created_at) - new Date(a.created_at),
@@ -468,10 +426,7 @@ function GroupContactsTab({
   };
 
   const handleDeleteCurrentGroup = async () => {
-    const deleted = await onDeleteGroup();
-    if (deleted) {
-      setViewMode("list");
-    }
+    await onDeleteGroup();
   };
 
   const closeQuickAddDialog = () => {
@@ -496,6 +451,10 @@ function GroupContactsTab({
     }
   };
 
+  useEffect(() => {
+    setViewMode("list");
+  }, [groupDeleteVersion]);
+
   if (viewMode === "details" && selectedGroup) {
     return (
       <div className="space-y-6">
@@ -511,25 +470,25 @@ function GroupContactsTab({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode("list")}
-              className="group flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all shadow-sm active:scale-95"
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all shadow-sm active:scale-95"
             >
-              <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1" />
               Back to Groups
             </button>
             {canManageContacts && (
               <>
                 <button
                   onClick={() => openEditDialog(selectedGroup)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-all shadow-sm active:scale-95"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-all shadow-sm active:scale-95"
                 >
-                  <Edit2 className="h-4 w-4" />
+                  <Edit2 className="h-3.5 w-3.5" />
                   Rename
                 </button>
                 <button
                   onClick={handleDeleteCurrentGroup}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-100 hover:border-red-200 transition-all shadow-sm active:scale-95"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 hover:border-red-200 transition-all shadow-sm active:scale-95"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </button>
               </>
@@ -596,79 +555,28 @@ function GroupContactsTab({
               )}
             </div>
 
-            <div ref={groupDateMenuRef} className="relative w-56">
-              <button
-                type="button"
-                onClick={() => setIsGroupDateMenuOpen((prev) => !prev)}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between gap-2"
-              >
-                <span className="truncate">{selectedGroupDateLabel}</span>
-                <div className="flex items-center gap-1">
-                  {groupAddedDateFilter === "range" &&
-                    (groupDateFrom || groupDateTo) && (
-                      <X
-                        className="h-4 w-4 text-gray-400 hover:text-gray-600"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setGroupDateFrom("");
-                          setGroupDateTo("");
-                          setGroupAddedDateFilter("all");
-                        }}
-                      />
-                    )}
-                  <Calendar className="h-4 w-4 text-gray-500" />
-                </div>
-              </button>
-
-              {isGroupDateMenuOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-87.5 rounded-2xl border border-gray-200 bg-white p-3 shadow-xl">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      value={groupDateFrom}
-                      onChange={(event) => {
-                        setGroupDateFrom(event.target.value);
-                        setGroupAddedDateFilter("range");
-                      }}
-                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                    />
-                    <input
-                      type="date"
-                      value={groupDateTo}
-                      onChange={(event) => {
-                        setGroupDateTo(event.target.value);
-                        setGroupAddedDateFilter("range");
-                      }}
-                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                    />
-                  </div>
-
-                  <div className="mt-3 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
-                    {groupDateOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => {
-                          setGroupAddedDateFilter(option.value);
-                          if (option.value !== "range") {
-                            setGroupDateFrom("");
-                            setGroupDateTo("");
-                            setIsGroupDateMenuOpen(false);
-                          }
-                        }}
-                        className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
-                          groupAddedDateFilter === option.value
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <DateRangeFilter
+              menuRef={groupDateMenuRef}
+              isOpen={isGroupDateMenuOpen}
+              onToggle={() => setIsGroupDateMenuOpen((prev) => !prev)}
+              selectedLabel={selectedGroupDateLabel}
+              isRangeActive={
+                groupAddedDateFilter === "range" &&
+                (groupDateFrom || groupDateTo)
+              }
+              dateFrom={groupDateFrom}
+              dateTo={groupDateTo}
+              onDateRangeChange={({ from, to }) => {
+                setGroupDateFrom(from);
+                setGroupDateTo(to);
+                setGroupAddedDateFilter("range");
+              }}
+              onClear={() => {
+                setGroupDateFrom("");
+                setGroupDateTo("");
+                setGroupAddedDateFilter("all");
+              }}
+            />
 
             {canManageContacts && (
               <button
@@ -687,24 +595,24 @@ function GroupContactsTab({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-md border border-indigo-200/60 bg-white shadow-sm shadow-indigo-100/20">
+        <div className="overflow-hidden rounded-md border border-indigo-200/60 bg-white">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm" ref={tableRef}>
               <thead className="bg-gray-100 border-b border-gray-100">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-600">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-600">
                     Name
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-600">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-600">
                     Email
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-600">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-600">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-600">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-600">
                     Added Date
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-gray-600">
+                  <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-gray-600">
                     Actions
                   </th>
                 </tr>
@@ -737,11 +645,11 @@ function GroupContactsTab({
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-sm font-medium ${
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                           contact.contact_status === "active"
                             ? "bg-green-100 text-green-700"
                             : contact.contact_status === "unsubscribed"
-                              ? "bg-amber-100 text-amber-700"
+                              ? "bg-red-100 text-red-700"
                               : "bg-red-100 text-red-700"
                         }`}
                       >
@@ -751,7 +659,7 @@ function GroupContactsTab({
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                       {new Date(contact.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-4 py-3 text-right space-x-1">
+                    <td className="px-4 py-3 text-right space-x-2">
                       <button
                         onClick={() => onEditContact(contact)}
                         className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
@@ -916,7 +824,7 @@ function GroupContactsTab({
 
                 {isQuickAddDropdownOpen && (
                   <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
-                    <div className="max-h-64 overflow-y-auto p-2">
+                    <div className="slim-scrollbar max-h-64 overflow-y-auto">
                       {filteredAvailableContacts.length > 0 ? (
                         filteredAvailableContacts.map((contact) => {
                           const isSelected = selectedContactIds.includes(
@@ -1127,51 +1035,71 @@ function GroupContactsTab({
 
 // Sub-component for Dialogs
 function GroupDialog({ title, value, onChange, error, onClose, onSubmit }) {
+  const [showRequiredHint, setShowRequiredHint] = useState(false);
+  const isNameMissing = showRequiredHint && !value.trim();
+
+  const handleConfirm = () => {
+    setShowRequiredHint(true);
+    if (!value.trim()) {
+      return;
+    }
+    onSubmit();
+  };
+
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-2xl font-bold text-gray-900">{title}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 transition-colors"
+            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
+        <p className="mb-4 text-xs text-gray-500">
+          Create a group name for organizing contacts.
+        </p>
+
         {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
           </div>
         )}
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wider">
-              Group Name
-            </label>
-            <input
-              type="text"
-              autoFocus
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="e.g. VIP Customers 2024"
-              className="w-full rounded-xl border border-gray-300 px-4 py-3.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
-            />
-          </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-gray-700">
+            Group Name
+          </label>
+          <input
+            type="text"
+            autoFocus
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="e.g. VIP Customers 2024"
+            className={`w-full rounded-lg border px-3 py-2 text-sm text-gray-700 transition-colors focus:outline-none ${
+              isNameMissing
+                ? "border-red-400 focus:border-red-400"
+                : "border-gray-300 focus:border-indigo-400"
+            }`}
+          />
+          {isNameMissing && (
+            <p className="mt-1 text-sm text-red-500">Required</p>
+          )}
         </div>
 
-        <div className="mt-8 flex gap-3">
+        <div className="mt-4 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg border border-gray-200 px-6 py-3.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
-            onClick={onSubmit}
-            className="flex-1 rounded-lg bg-indigo-600 px-6 py-3.5 text-sm font-medium text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-[0.98]"
+            onClick={handleConfirm}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700"
           >
             Confirm
           </button>

@@ -29,7 +29,8 @@ const Pagination = ({
     const rows = Array.from(tbody.querySelectorAll("tr")).filter((row) => {
       // Don't count "No users found" row if it exists
       return (
-        !row.textContent.includes("No marketing users found") &&
+        !row.textContent.includes("No users found") &&
+        !row.textContent.includes("No activity found") &&
         !row.textContent.includes("No sent campaigns found") &&
         !row.textContent.includes("No scheduled campaigns")
       );
@@ -51,7 +52,8 @@ const Pagination = ({
     // Handle "No rows found" specifically if it's there
     const emptyRow = Array.from(tbody.querySelectorAll("tr")).find(
       (row) =>
-        row.textContent.includes("No marketing users found") ||
+        row.textContent.includes("No users found") ||
+        row.textContent.includes("No activity found") ||
         row.textContent.includes("No sent campaigns found"),
     );
     if (emptyRow) {

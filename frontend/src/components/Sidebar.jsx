@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Users,
@@ -12,16 +12,64 @@ import {
   Send,
   History,
   Megaphone,
+  MoreVertical,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { isAdmin, hasRole } from "../lib/rbac.js";
+import api from "../lib/api.js";
+import defaultAvatar from "../assets/default-avatar.svg";
 
 function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const canManageUserFeatures = hasRole(user, ["users", "admin"]);
+  const canManageAdminFeatures = isAdmin(user);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+
+  const resolveAvatarUrl = (value) => {
+    const source = String(value || "").trim();
+
+    if (!source) {
+      return "";
+    }
+
+    if (source.startsWith("http://") || source.startsWith("https://")) {
+      return source;
+    }
+
+    const baseUrl = String(api.defaults.baseURL || "").trim();
+    const origin = baseUrl.replace(/\/api\/?$/, "");
+    const normalizedPath = source.startsWith("/") ? source : `/${source}`;
+    return `${origin}${normalizedPath}`;
+  };
+
+  const userAvatarUrl = resolveAvatarUrl(user?.avatarUrl);
+
+  useEffect(() => {
+    setIsProfileMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (!profileMenuRef.current?.contains(event.target)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
 
   const isActivePath = (itemPath) => {
+    const isUnsubscribeInsightsRoute =
+      location.pathname === "/analytics/unsubscribe-feedback/insights";
+
     if (itemPath === "/") {
-      return location.pathname === "/";
+      return location.pathname === "/" || isUnsubscribeInsightsRoute;
     }
 
     if (itemPath === "/contact") {
@@ -58,6 +106,14 @@ function Sidebar() {
       return location.pathname === "/profile";
     }
 
+    if (itemPath === "/analytics") {
+      return (
+        (location.pathname === itemPath ||
+          location.pathname.startsWith(`${itemPath}/`)) &&
+        !isUnsubscribeInsightsRoute
+      );
+    }
+
     return (
       location.pathname === itemPath ||
       location.pathname.startsWith(`${itemPath}/`)
@@ -72,18 +128,22 @@ function Sidebar() {
         { name: "Contacts", path: "/contact", Icon: Users },
         { name: "Templates", path: "/templates", Icon: FileText },
         { name: "Campaigns", path: "/campaigns", Icon: Mail },
-        {
-          name: "Send Email",
-          path: "/send-emails",
-          Icon: Send,
-          subsectionLabel: "Email Sender",
-        },
-        {
-          name: "Send Campaign",
-          path: "/send-campaign",
-          Icon: Megaphone,
-          subsectionLabel: "Email Sender",
-        },
+        ...(canManageUserFeatures
+          ? [
+              {
+                name: "Send Email",
+                path: "/send-emails",
+                Icon: Send,
+                subsectionLabel: "Email Sender",
+              },
+              {
+                name: "Send Campaign",
+                path: "/send-campaign",
+                Icon: Megaphone,
+                subsectionLabel: "Email Sender",
+              },
+            ]
+          : []),
         { name: "Email Logs", path: "/email-logs", Icon: History },
         { name: "Analytics", path: "/analytics", Icon: BarChart3 },
       ],
@@ -92,7 +152,7 @@ function Sidebar() {
       title: "Account",
       items: [
         { name: "My Profile", path: "/profile", Icon: User },
-        ...(user?.role === "admin"
+        ...(canManageAdminFeatures
           ? [
               { name: "Users", path: "/users", Icon: User },
               { name: "Settings", path: "/settings", Icon: Settings },
@@ -105,7 +165,7 @@ function Sidebar() {
   return (
     <aside className="w-64 h-screen fixed left-0 top-0 bg-[#272739] border-r border-white/10">
       <div className="h-full flex flex-col">
-        <div className="px-4 pt-4 pb-3 border-b border-white/10">
+        <div className="px-4 pt-4 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
               <Mail className="text-white w-4 h-4" />
@@ -142,7 +202,7 @@ function Sidebar() {
                   return (
                     <div key={item.path}>
                       {showLabel && (
-                        <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-200/45">
+                        <p className="px-2 pb-2 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-200/45">
                           {item.subsectionLabel}
                         </p>
                       )}
@@ -167,15 +227,61 @@ function Sidebar() {
           })}
         </nav>
 
-        <div className="px-3 py-3 border-t border-white/10">
-          <button
-            type="button"
-            onClick={logout}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
-          </button>
+        <div className="px-3 pb-3 border-t border-white/10 pt-3">
+          <div className="flex items-center gap-2.5 rounded-lg bg-white/10 px-2.5 py-2">
+            <div className="h-9 w-9 overflow-hidden rounded-full bg-white/15 flex items-center justify-center text-xs font-semibold text-white">
+              {userAvatarUrl ? (
+                <img
+                  src={userAvatarUrl}
+                  alt="User avatar"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <img
+                  src={defaultAvatar}
+                  alt="Default avatar"
+                  className="h-full w-full object-cover"
+                />
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-white">
+                {user?.name || "User"}
+              </p>
+              <p className="truncate text-[12px] text-indigo-100/70">
+                {user?.email || ""}
+              </p>
+            </div>
+
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-indigo-100/70 hover:bg-white/10 hover:text-white transition-colors"
+                aria-label="More options"
+                aria-expanded={isProfileMenuOpen}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+
+              {isProfileMenuOpen ? (
+                <div className="absolute right-0 bottom-9 z-20 w-36 rounded-lg border border-white/15 bg-[#1f1f2f] p-1.5 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
     </aside>

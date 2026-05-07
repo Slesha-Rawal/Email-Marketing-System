@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, Check, ChevronDown, Plus, Search, X } from "lucide-react";
+import { Check, ChevronDown, Plus, Search } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import api from "../lib/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import AllContactsTab from "../components/contacts/AllContactsTab.jsx";
 import GroupContactsTab from "../components/contacts/GroupContactsTab.jsx";
 import EditContactModal from "../components/contacts/EditContactModal.jsx";
+import DateRangeFilter from "../components/contacts/DateRangeFilter.jsx";
+import { isUsers } from "../lib/rbac.js";
 
 const initialFormState = {
   contact_name: "",
@@ -14,10 +16,18 @@ const initialFormState = {
   contact_status: "active",
 };
 
+const initialConfirmState = {
+  isOpen: false,
+  action: null,
+  contactId: null,
+  contactName: "",
+  contactEmail: "",
+};
+
 function Contact() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canManageContacts = user?.role === "marketing";
+  const canManageContacts = isUsers(user);
 
   const [activeTab, setActiveTab] = useState("all");
   const [allSearchTerm, setAllSearchTerm] = useState("");
@@ -33,6 +43,9 @@ function Contact() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [currentContact, setCurrentContact] = useState(null);
   const [formData, setFormData] = useState(initialFormState);
+  const [confirmState, setConfirmState] = useState(initialConfirmState);
+  const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false);
+  const [groupDeleteVersion, setGroupDeleteVersion] = useState(0);
 
   const [pageError, setPageError] = useState("");
   const [formError, setFormError] = useState("");
@@ -133,11 +146,21 @@ function Contact() {
     }
   };
 
-  const handleDeleteContact = async (id) => {
-    if (!window.confirm("Delete this contact?")) {
-      return;
-    }
+  const requestDeleteContact = (id) => {
+    const contact =
+      contacts.find((item) => item.contact_id === id) ||
+      groupContacts.find((item) => item.contact_id === id);
 
+    setConfirmState({
+      isOpen: true,
+      action: "delete",
+      contactId: id,
+      contactName: contact?.contact_name || "this contact",
+      contactEmail: contact?.contact_email || "",
+    });
+  };
+
+  const handleDeleteContact = async (id) => {
     try {
       await api.delete(`/contacts/${id}`);
       fetchContacts();
@@ -172,17 +195,13 @@ function Contact() {
     }
   };
 
-  const handleDeleteGroup = async () => {
-    if (!selectedGroupId) {
-      return false;
-    }
-
-    if (!window.confirm("Delete this group?")) {
+  const handleDeleteGroup = async (groupId) => {
+    if (!groupId) {
       return false;
     }
 
     try {
-      await api.delete(`/contact-groups/${selectedGroupId}`);
+      await api.delete(`/contact-groups/${groupId}`);
       setSelectedGroupId(null);
       setGroupContacts([]);
       await fetchGroups();
@@ -191,6 +210,22 @@ function Contact() {
       setGroupError(error.response?.data?.error || "Failed to delete group");
       return false;
     }
+  };
+
+  const requestDeleteGroup = () => {
+    if (!selectedGroupId || !selectedGroup) {
+      return false;
+    }
+
+    setConfirmState({
+      isOpen: true,
+      action: "delete-group",
+      contactId: selectedGroupId,
+      contactName: selectedGroup.group_name || "this group",
+      contactEmail: "",
+    });
+
+    return true;
   };
 
   const handleUpdateGroup = async (groupId, newName) => {
@@ -252,6 +287,55 @@ function Contact() {
     }
   };
 
+  const requestRemoveFromGroup = (contactId) => {
+    const contact = groupContacts.find((item) => item.contact_id === contactId);
+
+    setConfirmState({
+      isOpen: true,
+      action: "remove-from-group",
+      contactId,
+      contactName: contact?.contact_name || "this contact",
+      contactEmail: contact?.contact_email || "",
+    });
+  };
+
+  const closeConfirmModal = () => {
+    if (isConfirmSubmitting) {
+      return;
+    }
+
+    setConfirmState(initialConfirmState);
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmState.contactId || !confirmState.action) {
+      return;
+    }
+
+    try {
+      setIsConfirmSubmitting(true);
+
+      if (confirmState.action === "delete") {
+        await handleDeleteContact(confirmState.contactId);
+      }
+
+      if (confirmState.action === "remove-from-group") {
+        await handleRemoveFromGroup(confirmState.contactId);
+      }
+
+      if (confirmState.action === "delete-group") {
+        const deleted = await handleDeleteGroup(confirmState.contactId);
+        if (deleted) {
+          setGroupDeleteVersion((prev) => prev + 1);
+        }
+      }
+
+      setConfirmState(initialConfirmState);
+    } finally {
+      setIsConfirmSubmitting(false);
+    }
+  };
+
   const toggleSelectedContact = (contactId) => {
     setSelectedContactIds((prev) =>
       prev.includes(contactId)
@@ -297,15 +381,6 @@ function Contact() {
     { value: "bounced", label: "Bounced" },
   ];
 
-  const dateOptions = [
-    { value: "all", label: "Added Date" },
-    { value: "today", label: "Today" },
-    { value: "7d", label: "Last 7 days" },
-    { value: "30d", label: "Last 30 days" },
-    { value: "oldest", label: "Oldest first" },
-    { value: "range", label: "Custom range" },
-  ];
-
   const selectedStatusLabel =
     statusOptions.find((option) => option.value === statusFilter)?.label ||
     "Select Status";
@@ -313,8 +388,7 @@ function Contact() {
   const selectedDateLabel =
     addedDateFilter === "range" && (dateFrom || dateTo)
       ? `${dateFrom || "Start"} - ${dateTo || "End"}`
-      : dateOptions.find((option) => option.value === addedDateFilter)?.label ||
-        "Added Date";
+      : "Added Date";
 
   const matchesAddedDateFilter = (dateValue) => {
     if (addedDateFilter === "all") {
@@ -324,33 +398,6 @@ function Contact() {
     const createdDate = new Date(dateValue);
     if (Number.isNaN(createdDate.getTime())) {
       return false;
-    }
-
-    const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-
-    if (addedDateFilter === "today") {
-      return createdDate >= startOfToday;
-    }
-
-    if (addedDateFilter === "7d") {
-      const sevenDaysAgo = new Date(startOfToday);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      return createdDate >= sevenDaysAgo;
-    }
-
-    if (addedDateFilter === "30d") {
-      const thirtyDaysAgo = new Date(startOfToday);
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return createdDate >= thirtyDaysAgo;
-    }
-
-    if (addedDateFilter === "oldest") {
-      return true;
     }
 
     if (addedDateFilter === "range") {
@@ -399,14 +446,8 @@ function Contact() {
   };
 
   const sortByAddedDate = (list) => {
-    if (addedDateFilter !== "oldest") {
-      return [...list].sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at),
-      );
-    }
-
     return [...list].sort(
-      (a, b) => new Date(a.created_at) - new Date(b.created_at),
+      (a, b) => new Date(b.created_at) - new Date(a.created_at),
     );
   };
 
@@ -424,7 +465,14 @@ function Contact() {
     );
 
     return sortByAddedDate(filtered);
-  }, [contacts, allSearchTerm, statusFilter, addedDateFilter]);
+  }, [
+    contacts,
+    allSearchTerm,
+    statusFilter,
+    addedDateFilter,
+    dateFrom,
+    dateTo,
+  ]);
 
   const filteredGroupContacts = useMemo(() => {
     const filtered = groupContacts.filter(
@@ -498,7 +546,7 @@ function Contact() {
               <p className="mt-1 text-sm text-gray-500">
                 {canManageContacts
                   ? "Manage your audience, organize contacts in groups, and monitor subscriber status."
-                  : "Admin view-only access for contacts and segments."}
+                  : "View contacts and segments."}
               </p>
             </header>
 
@@ -588,81 +636,27 @@ function Contact() {
                     )}
                   </div>
 
-                  <div ref={dateMenuRef} className="relative w-56">
-                    <button
-                      type="button"
-                      onClick={() => setIsDateMenuOpen((prev) => !prev)}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 focus:outline-none focus:border-indigo-300 flex items-center justify-between gap-2"
-                    >
-                      <span className="truncate">{selectedDateLabel}</span>
-                      <div className="flex items-center gap-1">
-                        {addedDateFilter === "range" &&
-                          (dateFrom || dateTo) && (
-                            <X
-                              className="h-4 w-4 text-gray-400 hover:text-gray-600"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDateFrom("");
-                                setDateTo("");
-                                setAddedDateFilter("all");
-                              }}
-                            />
-                          )}
-                        <Calendar className="h-4 w-4 text-gray-500" />
-                      </div>
-                    </button>
-
-                    {isDateMenuOpen && (
-                      <div className="absolute right-0 z-20 mt-2 w-87.5 rounded-2xl border border-gray-200 bg-white p-3 shadow-xl">
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="date"
-                            value={dateFrom}
-                            onChange={(event) => {
-                              setDateFrom(event.target.value);
-                              setAddedDateFilter("range");
-                            }}
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                          />
-                          <input
-                            type="date"
-                            value={dateTo}
-                            onChange={(event) => {
-                              setDateTo(event.target.value);
-                              setAddedDateFilter("range");
-                            }}
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
-                          />
-                        </div>
-
-                        <div className="mt-3 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
-                          {dateOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => {
-                                setAddedDateFilter(option.value);
-                                if (option.value !== "range") {
-                                  setDateFrom("");
-                                  setDateTo("");
-                                }
-                                if (option.value !== "range") {
-                                  setIsDateMenuOpen(false);
-                                }
-                              }}
-                              className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
-                                addedDateFilter === option.value
-                                  ? "bg-indigo-50 text-indigo-700"
-                                  : "text-gray-700 hover:bg-gray-50"
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <DateRangeFilter
+                    menuRef={dateMenuRef}
+                    isOpen={isDateMenuOpen}
+                    onToggle={() => setIsDateMenuOpen((prev) => !prev)}
+                    selectedLabel={selectedDateLabel}
+                    isRangeActive={
+                      addedDateFilter === "range" && (dateFrom || dateTo)
+                    }
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
+                    onDateRangeChange={({ from, to }) => {
+                      setDateFrom(from);
+                      setDateTo(to);
+                      setAddedDateFilter("range");
+                    }}
+                    onClear={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                      setAddedDateFilter("all");
+                    }}
+                  />
 
                   {canManageContacts && (
                     <button
@@ -677,18 +671,12 @@ function Contact() {
               </div>
             )}
 
-            {pageError && (
-              <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700 animate-in fade-in slide-in-from-top-2">
-                {pageError}
-              </div>
-            )}
-
             {activeTab === "all" ? (
               <AllContactsTab
                 contacts={filteredContacts}
                 canManageContacts={canManageContacts}
                 onEdit={openEditModal}
-                onDelete={handleDeleteContact}
+                onDelete={requestDeleteContact}
               />
             ) : (
               <GroupContactsTab
@@ -699,17 +687,18 @@ function Contact() {
                 selectedGroup={selectedGroup}
                 groupError={groupError}
                 onCreateGroup={handleCreateGroup}
-                onDeleteGroup={handleDeleteGroup}
+                onDeleteGroup={requestDeleteGroup}
                 availableContacts={availableContacts}
                 selectedContactIds={selectedContactIds}
                 onToggleSelectedContact={toggleSelectedContact}
                 onAssignContacts={handleAssignContacts}
                 groupContacts={filteredGroupContacts}
-                onRemoveFromGroup={handleRemoveFromGroup}
+                onRemoveFromGroup={requestRemoveFromGroup}
                 onUpdateGroup={handleUpdateGroup}
                 onEditContact={openEditModal}
-                onDeleteContact={handleDeleteContact}
+                onDeleteContact={requestDeleteContact}
                 onClearSelectedContacts={() => setSelectedContactIds([])}
+                groupDeleteVersion={groupDeleteVersion}
               />
             )}
           </div>
@@ -724,6 +713,84 @@ function Contact() {
         onClose={() => setShowEditModal(false)}
         onSubmit={handleUpdateContact}
       />
+
+      <ConfirmActionModal
+        show={confirmState.isOpen}
+        title={
+          confirmState.action === "delete-group"
+            ? "Delete group?"
+            : confirmState.action === "remove-from-group"
+              ? "Remove contact from group?"
+              : "Delete contact?"
+        }
+        description={
+          confirmState.action === "delete-group"
+            ? `${confirmState.contactName} and all its member assignments will be removed.`
+            : confirmState.action === "remove-from-group"
+              ? `${confirmState.contactName} will be removed from ${selectedGroup?.group_name || "this group"}.`
+              : `${confirmState.contactName} will be permanently deleted from contacts and all groups.`
+        }
+        detail={confirmState.contactEmail}
+        confirmLabel={
+          confirmState.action === "delete-group"
+            ? "Delete Group"
+            : confirmState.action === "remove-from-group"
+              ? "Remove Contact"
+              : "Delete Contact"
+        }
+        isLoading={isConfirmSubmitting}
+        onCancel={closeConfirmModal}
+        onConfirm={handleConfirmAction}
+      />
+    </div>
+  );
+}
+
+function ConfirmActionModal({
+  show,
+  title,
+  description,
+  detail,
+  confirmLabel,
+  isLoading,
+  onCancel,
+  onConfirm,
+}) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        </div>
+
+        <div className="px-5 py-4">
+          <p className="text-sm text-gray-600">{description}</p>
+          {detail && <p className="mt-2 text-xs text-gray-500">{detail}</p>}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 pb-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isLoading}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isLoading}
+            className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+          >
+            {isLoading ? "Please wait..." : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

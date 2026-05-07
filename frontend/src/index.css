@@ -77,6 +77,12 @@
   margin-right: 0;
 }
 
+/* Hide the resize-extension floating align popover above selected images. */
+.tiptap
+  div[style*="transform: translate(-50%, -50%)"][style*="z-index: 999"][style*="justify-content: space-between"] {
+  display: none !important;
+}
+
 .tiptap a:not([data-cta-button="true"]) {
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -114,4 +120,26 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
+}
+
+.slim-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.slim-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.slim-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.slim-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }

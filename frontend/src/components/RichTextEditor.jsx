@@ -22,7 +22,6 @@ import {
   MousePointer2,
   RectangleHorizontal,
   Redo2,
-  Trash2,
   Undo2,
 } from "lucide-react";
 import api from "../lib/api.js";
@@ -159,6 +158,8 @@ const ButtonNode = Node.create({
 const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
   const [hasSelectedImage, setHasSelectedImage] = useState(false);
   const [imageAlign, setImageAlign] = useState("center");
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("https://");
   const [hasSelectedButton, setHasSelectedButton] = useState(false);
   const [buttonProps, setButtonProps] = useState({
     text: "Learn More",
@@ -172,6 +173,107 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
   const textColorInputRef = useRef(null);
   const btnBgColorInputRef = useRef(null);
   const btnTextColorInputRef = useRef(null);
+
+  const getSelectedNodeTypeName = () =>
+    editor?.state?.selection?.node?.type?.name || "";
+
+  const inferAlignFromContainerStyle = (containerStyle = "") => {
+    const normalized = containerStyle.toLowerCase().replace(/\s+/g, " ");
+    if (normalized.includes("margin: 0 0 0 auto")) {
+      return "right";
+    }
+    if (normalized.includes("margin: 0 auto 0 0")) {
+      return "left";
+    }
+    if (normalized.includes("margin: 0 auto")) {
+      return "center";
+    }
+    return "center";
+  };
+
+  const applyImageResizeAlignment = (alignment) => {
+    if (!editor) {
+      return false;
+    }
+
+    const attrs = editor.getAttributes("imageResize") || {};
+    const existingContainerStyle = attrs.containerStyle || "";
+    const cleanedContainerStyle = existingContainerStyle
+      .replace(/margin\s*:[^;]+;?/gi, "")
+      .replace(/float\s*:[^;]+;?/gi, "")
+      .replace(/padding-left\s*:[^;]+;?/gi, "")
+      .replace(/padding-right\s*:[^;]+;?/gi, "")
+      .trim();
+
+    const marginRule =
+      alignment === "left"
+        ? "margin: 0 auto 0 0;"
+        : alignment === "right"
+          ? "margin: 0 0 0 auto;"
+          : "margin: 0 auto;";
+
+    const nextContainerStyle = `${cleanedContainerStyle}${
+      cleanedContainerStyle && !cleanedContainerStyle.endsWith(";") ? ";" : ""
+    } ${marginRule}`.trim();
+
+    const nextWrapperStyle = "display: flex;";
+
+    return editor
+      .chain()
+      .focus()
+      .updateAttributes("imageResize", {
+        imageAlign: alignment,
+        containerStyle: nextContainerStyle,
+        wrapperStyle: nextWrapperStyle,
+      })
+      .run();
+  };
+
+  const applyImageNodeAlignment = (alignment) => {
+    if (!editor) {
+      return false;
+    }
+
+    const attrs = editor.getAttributes("image") || {};
+    const existingStyle = attrs.style || "";
+    const cleanedStyle = existingStyle
+      .replace(/margin-left\s*:[^;]+;?/gi, "")
+      .replace(/margin-right\s*:[^;]+;?/gi, "")
+      .replace(/display\s*:[^;]+;?/gi, "")
+      .replace(/float\s*:[^;]+;?/gi, "")
+      .trim();
+
+    const alignStyle =
+      alignment === "left"
+        ? "display:block;margin-left:0;margin-right:auto;"
+        : alignment === "right"
+          ? "display:block;margin-left:auto;margin-right:0;"
+          : "display:block;margin-left:auto;margin-right:auto;";
+
+    const nextStyle = `${cleanedStyle}${
+      cleanedStyle && !cleanedStyle.endsWith(";") ? ";" : ""
+    }${alignStyle}`;
+
+    return editor
+      .chain()
+      .focus()
+      .updateAttributes("image", {
+        imageAlign: alignment,
+        style: nextStyle,
+      })
+      .run();
+  };
+
+  const isImageNodeSelected = () => {
+    const selectedNodeName = getSelectedNodeTypeName();
+    return (
+      selectedNodeName === "image" ||
+      selectedNodeName === "resizableImage" ||
+      selectedNodeName === "imageResize" ||
+      editor?.isActive("image") ||
+      editor?.isActive("imageResize")
+    );
+  };
 
   const editor = useEditor({
     extensions: [
@@ -218,6 +320,7 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
 
         if (
           selectedNode?.type?.name === "image" ||
+          selectedNode?.type?.name === "imageResize" ||
           selectedNode?.type?.name === "buttonNode"
         ) {
           event.preventDefault();
@@ -251,12 +354,18 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
     }
 
     const syncControls = () => {
-      const imageSelected = editor.isActive("image");
+      const imageSelected =
+        editor.isActive("imageResize") || editor.isActive("image");
       setHasSelectedImage(imageSelected);
 
       if (imageSelected) {
-        const imageAttrs = editor.getAttributes("image");
-        setImageAlign(imageAttrs.imageAlign || "center");
+        const imageAttrs = editor.isActive("imageResize")
+          ? editor.getAttributes("imageResize")
+          : editor.getAttributes("image");
+        setImageAlign(
+          imageAttrs.imageAlign ||
+            inferAlignFromContainerStyle(imageAttrs.containerStyle),
+        );
       }
 
       const currentColor = editor.getAttributes("textStyle").color;
@@ -351,20 +460,44 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
       return;
     }
 
-    if (editor.isActive("link")) {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-
     const previousUrl = editor.getAttributes("link").href || "https://";
-    const url = window.prompt("Enter hyperlink URL", previousUrl);
+    setLinkUrl(previousUrl);
+    setShowLinkModal(true);
+  };
 
-    if (url === null) {
+  const isAlignmentActive = (alignment) => {
+    if (hasSelectedImage) {
+      return imageAlign === alignment;
+    }
+
+    return editor?.isActive({ textAlign: alignment });
+  };
+
+  const applyAlignment = (alignment) => {
+    if (!editor) {
       return;
     }
 
-    if (!url.trim()) {
+    if (hasSelectedImage || isImageNodeSelected()) {
+      setImageAlign(alignment);
+      applyImageResizeAlignment(alignment);
+      applyImageNodeAlignment(alignment);
+      return;
+    }
+
+    editor.chain().focus().setTextAlign(alignment).run();
+  };
+
+  const applyLinkFromModal = () => {
+    if (!editor) {
+      return;
+    }
+
+    const nextUrl = linkUrl.trim();
+
+    if (!nextUrl) {
       editor.chain().focus().unsetLink().run();
+      setShowLinkModal(false);
       return;
     }
 
@@ -372,8 +505,19 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
       .chain()
       .focus()
       .extendMarkRange("link")
-      .setLink({ href: url.trim() })
+      .setLink({ href: nextUrl })
       .run();
+
+    setShowLinkModal(false);
+  };
+
+  const removeLinkFromModal = () => {
+    if (!editor) {
+      return;
+    }
+
+    editor.chain().focus().unsetLink().run();
+    setShowLinkModal(false);
   };
 
   useEffect(() => {
@@ -381,22 +525,18 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
       return;
     }
 
-    const attrs = editor.getAttributes("image");
-    if ((attrs.imageAlign || "center") === imageAlign) {
+    const attrs = editor.isActive("imageResize")
+      ? editor.getAttributes("imageResize")
+      : editor.getAttributes("image");
+    const currentAlign =
+      attrs.imageAlign || inferAlignFromContainerStyle(attrs.containerStyle);
+    if (currentAlign === imageAlign) {
       return;
     }
 
-    editor.chain().updateAttributes("image", { imageAlign }).run();
+    applyImageResizeAlignment(imageAlign);
+    applyImageNodeAlignment(imageAlign);
   }, [editor, hasSelectedImage, imageAlign]);
-
-  const deleteSelectedImage = () => {
-    if (!editor || !hasSelectedImage) {
-      return;
-    }
-
-    editor.chain().focus().deleteSelection().run();
-    setHasSelectedImage(false);
-  };
 
   const insertButton = () => {
     if (!editor) {
@@ -424,6 +564,57 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
 
   return (
     <div className="bg-white">
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">
+              Insert Link
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Add or update the hyperlink for the selected text.
+            </p>
+
+            <label className="mt-4 block text-xs font-medium text-gray-700">
+              URL
+            </label>
+            <input
+              type="url"
+              value={linkUrl}
+              onChange={(event) => setLinkUrl(event.target.value)}
+              placeholder="https://example.com"
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-400 focus:outline-none"
+              autoFocus
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              {editor.isActive("link") && (
+                <button
+                  type="button"
+                  onClick={removeLinkFromModal}
+                  className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                >
+                  Remove
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowLinkModal(false)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyLinkFromModal}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
+              >
+                Apply Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-nowrap items-center gap-1 border-b border-gray-200 bg-white px-2 py-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <ToolbarButton
           title="Undo"
@@ -494,22 +685,22 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
         <div className="mx-1 h-5 w-px bg-gray-200" />
         <ToolbarButton
           title="Align left"
-          isActive={editor.isActive({ textAlign: "left" })}
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          isActive={isAlignmentActive("left")}
+          onClick={() => applyAlignment("left")}
         >
           <AlignLeft className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           title="Align center"
-          isActive={editor.isActive({ textAlign: "center" })}
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          isActive={isAlignmentActive("center")}
+          onClick={() => applyAlignment("center")}
         >
           <AlignCenter className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           title="Align right"
-          isActive={editor.isActive({ textAlign: "right" })}
-          onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          isActive={isAlignmentActive("right")}
+          onClick={() => applyAlignment("right")}
         >
           <AlignRight className="h-4 w-4" />
         </ToolbarButton>
@@ -555,57 +746,6 @@ const RichTextEditor = ({ value, onChange, placeholder = "Write here..." }) => {
         onChange={handleImageFileChange}
         className="hidden"
       />
-
-      {hasSelectedImage && (
-        <div className="border-t border-gray-100 bg-gray-50 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-gray-600">
-              Image Controls
-            </span>
-            <button
-              type="button"
-              onClick={() => setImageAlign("left")}
-              className={`rounded-md px-2 py-1 text-xs ${
-                imageAlign === "left"
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              Left
-            </button>
-            <button
-              type="button"
-              onClick={() => setImageAlign("center")}
-              className={`rounded-md px-2 py-1 text-xs ${
-                imageAlign === "center"
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              Center
-            </button>
-            <button
-              type="button"
-              onClick={() => setImageAlign("right")}
-              className={`rounded-md px-2 py-1 text-xs ${
-                imageAlign === "right"
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              Right
-            </button>
-            <button
-              type="button"
-              onClick={deleteSelectedImage}
-              className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete Image
-            </button>
-          </div>
-        </div>
-      )}
 
       {hasSelectedButton && (
         <div className="border-t border-gray-100 bg-gray-50 px-3 py-3">

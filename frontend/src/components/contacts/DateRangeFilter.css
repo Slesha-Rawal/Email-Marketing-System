@@ -1,0 +1,208 @@
+.contact-rdp {
+  width: 100%;
+}
+
+.contact-rdp-hidden {
+  display: none;
+}
+
+.contact-rdp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.contact-rdp-header-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #4f46e5;
+}
+
+.contact-rdp-header-dropdowns {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.contact-rdp-header-select {
+  border: 0;
+  background: transparent;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e5e7eb;
+}
+
+.contact-rdp-header-select::-webkit-scrollbar {
+  width: 6px;
+}
+
+.contact-rdp-header-select::-webkit-scrollbar-track {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+
+.contact-rdp-header-select::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+.contact-rdp-months {
+  width: 100%;
+}
+
+.contact-rdp-month {
+  width: 100%;
+}
+
+.contact-rdp-caption {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 26px;
+}
+
+.contact-rdp-dropdowns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.contact-rdp-dropdown {
+  display: inline-flex;
+  align-items: center;
+}
+
+.contact-rdp select {
+  border: 0;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+  line-height: 1.1;
+}
+
+.contact-rdp-nav {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+.contact-rdp-nav-button {
+  border: 0;
+  background: #f1f5f9;
+  color: #64748b;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.contact-rdp-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 1px;
+}
+
+.contact-rdp-weekdays {
+  color: #8b97a5;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.contact-rdp-weekday {
+  padding-bottom: 2px;
+  text-transform: none;
+}
+
+.contact-rdp-week {
+  height: 24px;
+}
+
+.contact-rdp-day {
+  text-align: center;
+}
+
+.contact-rdp-day-button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  color: #3f3f46;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+}
+
+.contact-rdp-day-button:hover {
+  background: #eef2ff;
+}
+
+.contact-rdp-range-middle .contact-rdp-day-button {
+  background: rgba(59, 130, 246, 0.2);
+  color: #334155;
+  border-radius: 0;
+}
+
+.contact-rdp-range-start .contact-rdp-day-button,
+.contact-rdp-range-end .contact-rdp-day-button,
+.contact-rdp-selected .contact-rdp-day-button {
+  background: #5b85f2;
+  color: #ffffff;
+}
+
+.contact-rdp-range-start .contact-rdp-day-button {
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
+.contact-rdp-range-end .contact-rdp-day-button {
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+}
+
+.contact-rdp-today .contact-rdp-day-button {
+  border: 1px solid #93c5fd;
+}
+
+.contact-rdp-outside .contact-rdp-day-button {
+  color: #cbd5e1;
+}
+
+@media (max-width: 640px) {
+  .contact-rdp-header-select {
+    font-size: 10px;
+  }
+
+  .contact-rdp select {
+    font-size: 11px;
+  }
+
+  .contact-rdp-day-button {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+}
