@@ -1,4 +1,21 @@
 import { queryDb } from "../utils/db.js";
+import bcrypt from "bcryptjs";
+
+const toPublicAvatarPath = (storedPath = "") => {
+  const normalizedPath = String(storedPath || "")
+    .replace(/\\/g, "/")
+    .trim();
+
+  if (!normalizedPath) {
+    return "";
+  }
+
+  if (normalizedPath.startsWith("/")) {
+    return normalizedPath;
+  }
+
+  return `/${normalizedPath}`;
+};
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -15,6 +32,64 @@ const computeLatestDate = (...values) => {
   return new Date(Math.max(...timestamps));
 };
 
+const buildActivityTimeline = ({
+  createdAt,
+  lastLoginAt,
+  contactsCreated,
+  lastContactActivity,
+  templatesCreated,
+  lastTemplateActivity,
+  campaignsCreated,
+  campaignsSent,
+  lastCampaignActivity,
+  updatedAt,
+}) => {
+  return [
+    {
+      key: "created",
+      title: "Account created",
+      date: createdAt,
+      detail: "User profile was created.",
+    },
+    {
+      key: "login",
+      title: "Last login",
+      date: lastLoginAt,
+      detail: "Most recent sign-in recorded.",
+    },
+    {
+      key: "contacts",
+      title: "Contacts activity",
+      date: lastContactActivity,
+      detail: `${contactsCreated} contacts created.`,
+    },
+    {
+      key: "templates",
+      title: "Templates activity",
+      date: lastTemplateActivity,
+      detail: `${templatesCreated} templates created.`,
+    },
+    {
+      key: "campaigns",
+      title: "Campaigns activity",
+      date: lastCampaignActivity,
+      detail: `${campaignsCreated} campaigns created, ${campaignsSent} sent.`,
+    },
+    {
+      key: "updated",
+      title: "Latest account update",
+      date: updatedAt,
+      detail: "Most recent user record update.",
+    },
+  ]
+    .filter((item) => item.date)
+    .map((item) => ({
+      ...item,
+      date: new Date(item.date).toISOString(),
+    }))
+    .sort((left, right) => new Date(right.date) - new Date(left.date));
+};
+
 const getMarketingUsers = async (req, res) => {
   try {
     const users = await queryDb(
@@ -24,6 +99,7 @@ const getMarketingUsers = async (req, res) => {
          u.user_email,
          u.user_role,
          u.user_status,
+        u.user_avatar_url,
          u.created_at,
          u.updated_at,
          u.last_login_at,
@@ -58,7 +134,7 @@ const getMarketingUsers = async (req, res) => {
          FROM templates
          GROUP BY created_by
        ) t ON t.created_by = u.user_id
-       WHERE u.user_role = 'marketing'
+      WHERE u.user_role IN ('users', 'admin')
        ORDER BY u.created_at DESC`,
     );
 
@@ -69,6 +145,7 @@ const getMarketingUsers = async (req, res) => {
         email: user.user_email,
         role: user.user_role,
         status: user.user_status,
+        avatarUrl: toPublicAvatarPath(user.user_avatar_url),
         createdAt: user.created_at,
         updatedAt: user.updated_at,
         lastLoginAt: user.last_login_at,
@@ -87,8 +164,64 @@ const getMarketingUsers = async (req, res) => {
       })),
     );
   } catch (error) {
-    console.error("Get marketing users error:", error);
+    console.error("Get users error:", error);
     return res.status(500).json({ message: "Failed to load users" });
+  }
+};
+
+const createManagedUser = async (req, res) => {
+  const payload = req.body && typeof req.body === "object" ? req.body : {};
+  const name = String(payload.name || "").trim();
+  const email = String(payload.email || "")
+    .trim()
+    .toLowerCase();
+  const role = String(payload.role || "")
+    .trim()
+    .toLowerCase();
+  const password = String(payload.password || "").trim();
+
+  if (!name || !email || !role || !password) {
+    return res
+      .status(400)
+      .json({ message: "Name, email, role, and password are required" });
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: "Enter a valid email address" });
+  }
+
+  if (!["admin", "users"].includes(role)) {
+    return res.status(400).json({ message: "Invalid role" });
+  }
+
+  if (password.length < 8) {
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 8 characters" });
+  }
+
+  try {
+    const existing = await queryDb(
+      `SELECT user_id FROM users WHERE user_email = ? LIMIT 1`,
+      [email],
+    );
+
+    if (existing.length > 0) {
+      return res.status(409).json({ message: "Email is already in use" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await queryDb(
+      `INSERT INTO users (user_name, user_email, user_password, user_role, user_status)
+       VALUES (?, ?, ?, ?, 'active')`,
+      [name, email, hashedPassword, role],
+    );
+
+    return res.status(201).json({ message: "User created successfully" });
+  } catch (error) {
+    console.error("Create managed user error:", error);
+    return res.status(500).json({ message: "Failed to create user" });
   }
 };
 
@@ -109,7 +242,8 @@ const getMarketingUserActivity = async (req, res) => {
          user_status,
          created_at,
          updated_at,
-         last_login_at
+         last_login_at,
+         user_avatar_url
        FROM users
        WHERE user_id = ?
        LIMIT 1`,
@@ -161,13 +295,31 @@ const getMarketingUserActivity = async (req, res) => {
          total_recipients,
          total_sent,
          total_opened,
-         total_clicked
+         total_clicked,
+         total_unsubscribed
        FROM campaigns
        WHERE created_by = ?
          AND campaign_status = 'sent'
        ORDER BY COALESCE(sent_date, updated_at, created_at) DESC`,
       [userId],
     );
+
+    const contactsCreated = Number(contactStats.contacts_created || 0);
+    const templatesCreated = Number(templateStats.templates_created || 0);
+    const campaignsCreated = Number(campaignStats.campaigns_created || 0);
+    const campaignsSent = Number(campaignStats.campaigns_sent || 0);
+    const activityTimeline = buildActivityTimeline({
+      createdAt: user.created_at,
+      lastLoginAt: user.last_login_at,
+      contactsCreated,
+      lastContactActivity: contactStats.last_contact_activity,
+      templatesCreated,
+      lastTemplateActivity: templateStats.last_template_activity,
+      campaignsCreated,
+      campaignsSent,
+      lastCampaignActivity: campaignStats.last_campaign_activity,
+      updatedAt: user.updated_at,
+    });
 
     return res.status(200).json({
       user: {
@@ -179,12 +331,13 @@ const getMarketingUserActivity = async (req, res) => {
         createdAt: user.created_at,
         updatedAt: user.updated_at,
         lastLoginAt: user.last_login_at,
+        avatarUrl: toPublicAvatarPath(user.user_avatar_url),
       },
       summary: {
-        contactsCreated: Number(contactStats.contacts_created || 0),
-        templatesCreated: Number(templateStats.templates_created || 0),
-        campaignsCreated: Number(campaignStats.campaigns_created || 0),
-        campaignsSent: Number(campaignStats.campaigns_sent || 0),
+        contactsCreated,
+        templatesCreated,
+        campaignsCreated,
+        campaignsSent,
         lastActivityAt: computeLatestDate(
           user.last_login_at,
           contactStats.last_contact_activity,
@@ -193,10 +346,11 @@ const getMarketingUserActivity = async (req, res) => {
           user.updated_at,
         ),
       },
+      activityTimeline,
       sentCampaigns,
     });
   } catch (error) {
-    console.error("Get marketing user activity error:", error);
+    console.error("Get user activity error:", error);
     return res.status(500).json({ message: "Failed to load user activity" });
   }
 };
@@ -223,7 +377,7 @@ const updateMarketingUser = async (req, res) => {
     return res.status(400).json({ message: "Enter a valid email address" });
   }
 
-  if (!["admin", "marketing"].includes(role)) {
+  if (!["admin", "users"].includes(role)) {
     return res.status(400).json({ message: "Invalid role" });
   }
 
@@ -261,7 +415,7 @@ const updateMarketingUser = async (req, res) => {
 
     return res.status(200).json({ message: "User updated successfully" });
   } catch (error) {
-    console.error("Update marketing user error:", error);
+    console.error("Update user error:", error);
     return res.status(500).json({ message: "Failed to update user" });
   }
 };
@@ -292,9 +446,9 @@ const deleteMarketingUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    if (rows[0].user_role !== "marketing") {
+    if (!["users", "admin"].includes(rows[0].user_role)) {
       return res.status(400).json({
-        message: "Only marketing users can be deleted from this page",
+        message: "This user cannot be deleted from this page",
       });
     }
 
@@ -302,13 +456,14 @@ const deleteMarketingUser = async (req, res) => {
 
     return res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
-    console.error("Delete marketing user error:", error);
+    console.error("Delete user error:", error);
     return res.status(500).json({ message: "Failed to delete user" });
   }
 };
 
 export default {
   getMarketingUsers,
+  createManagedUser,
   getMarketingUserActivity,
   updateMarketingUser,
   deleteMarketingUser,

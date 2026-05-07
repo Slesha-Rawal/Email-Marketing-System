@@ -12,12 +12,21 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter to accept only CSV files
+// File filter to accept CSV and XLSX files
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype === "text/csv" || file.originalname.endsWith(".csv")) {
+  const filename = String(file.originalname || "").toLowerCase();
+  const mimeType = String(file.mimetype || "").toLowerCase();
+
+  const isCsv = mimeType === "text/csv" || filename.endsWith(".csv");
+  const isXlsx =
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    filename.endsWith(".xlsx");
+
+  if (isCsv || isXlsx) {
     cb(null, true);
   } else {
-    cb(new Error("Only CSV files are allowed"), false);
+    cb(new Error("Only CSV and XLSX files are allowed"), false);
   }
 };
 

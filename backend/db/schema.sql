@@ -2,7 +2,7 @@
 -- Drop and recreate the entire database for a clean start
 
 DROP DATABASE IF EXISTS emailmarketing;
-CREATE DATABASE emailmarketing;
+CREATE DATABASE emailmarketing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE emailmarketing;
 
 -- Users table for authentication
@@ -11,11 +11,108 @@ CREATE TABLE IF NOT EXISTS users (
   user_email VARCHAR(255) NOT NULL UNIQUE,
   user_password VARCHAR(255) NOT NULL,
   user_name VARCHAR(255) NOT NULL,
-  user_role ENUM('admin', 'marketing') NOT NULL,
+  user_role ENUM('admin', 'users') NOT NULL,
   user_status ENUM('active', 'inactive') DEFAULT 'active',
+  user_avatar_url VARCHAR(500) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   last_login_at TIMESTAMP NULL DEFAULT NULL
+);
+
+-- Trusted devices for suspicious-login detection
+CREATE TABLE IF NOT EXISTS trusted_login_devices (
+  device_id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  fingerprint_hash VARCHAR(64) NOT NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(500) NULL,
+  first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_user_fingerprint (user_id, fingerprint_hash),
+  INDEX idx_trusted_device_user (user_id),
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Pending OTP requests for suspicious login verification
+CREATE TABLE IF NOT EXISTS login_otp_requests (
+  otp_request_id INT PRIMARY KEY AUTO_INCREMENT,
+  challenge_id VARCHAR(64) NOT NULL UNIQUE,
+  user_id INT NOT NULL,
+  fingerprint_hash VARCHAR(64) NOT NULL,
+  otp_hash VARCHAR(64) NOT NULL,
+  attempts_left INT NOT NULL DEFAULT 5,
+  resend_count INT NOT NULL DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  resend_available_at DATETIME NOT NULL,
+  consumed_at DATETIME NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(500) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_sent_at DATETIME NOT NULL,
+  INDEX idx_login_otp_user_pending (user_id, consumed_at),
+  INDEX idx_login_otp_expires_at (expires_at),
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- OTP store for login 2FA (one active OTP per user)
+CREATE TABLE IF NOT EXISTS otp_store (
+  user_id INT PRIMARY KEY,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- OTP store for forgot-password verification
+CREATE TABLE IF NOT EXISTS forgot_password_otp_store (
+  user_id INT PRIMARY KEY,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Password reset tokens (one-time, hashed)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  password_reset_token_id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_reset_user_active (user_id, used_at, expires_at),
+  INDEX idx_password_reset_expires_at (expires_at),
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- OTP requests for sensitive account changes (email/password)
+CREATE TABLE IF NOT EXISTS account_otp_requests (
+  account_otp_id INT PRIMARY KEY AUTO_INCREMENT,
+  challenge_id VARCHAR(64) NOT NULL UNIQUE,
+  user_id INT NOT NULL,
+  purpose ENUM('email_change', 'password_change') NOT NULL,
+  target_email VARCHAR(255) NOT NULL,
+  otp_hash VARCHAR(64) NOT NULL,
+  attempts_left INT NOT NULL DEFAULT 5,
+  expires_at DATETIME NOT NULL,
+  consumed_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_account_otp_user_pending (user_id, purpose, consumed_at),
+  INDEX idx_account_otp_expires_at (expires_at),
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Refresh token sessions for rotation/revocation
+CREATE TABLE IF NOT EXISTS refresh_token_sessions (
+  refresh_session_id INT PRIMARY KEY AUTO_INCREMENT,
+  token_id VARCHAR(64) NOT NULL UNIQUE,
+  user_id INT NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  replaced_by_token_id VARCHAR(64) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_refresh_user_active (user_id, revoked_at, expires_at),
+  INDEX idx_refresh_expires_at (expires_at),
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
 -- Contacts table for mailing list management
@@ -55,6 +152,25 @@ CREATE TABLE IF NOT EXISTS contact_group_members (
   FOREIGN KEY (added_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+-- SMTP settings table (singleton row with settings_id = 1)
+CREATE TABLE IF NOT EXISTS smtp_settings (
+  settings_id TINYINT PRIMARY KEY,
+  smtp_host VARCHAR(255) NOT NULL,
+  smtp_port VARCHAR(10) NOT NULL DEFAULT '587',
+  smtp_secure TINYINT(1) NOT NULL DEFAULT 0,
+  smtp_user VARCHAR(255) NOT NULL,
+  smtp_pass VARCHAR(255) NOT NULL,
+  smtp_from VARCHAR(500) NOT NULL,
+  sender_name VARCHAR(255) NOT NULL DEFAULT '',
+  sender_email VARCHAR(255) NOT NULL DEFAULT '',
+  reply_to_email VARCHAR(255),
+  updated_by INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT chk_smtp_settings_singleton CHECK (settings_id = 1),
+  FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
 -- Templates table for email template management
 CREATE TABLE IF NOT EXISTS templates (
   template_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -76,10 +192,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
   campaign_body TEXT NULL,
   campaign_html LONGTEXT,
   template_id INT NULL,
-  sender_name VARCHAR(255) NOT NULL,
-  sender_email VARCHAR(255) NOT NULL,
-  reply_to_email VARCHAR(255),
   contact_segment VARCHAR(255),
+  bcc_segment VARCHAR(255) NULL,
   campaign_status ENUM('draft', 'scheduled', 'sending', 'sent', 'paused', 'cancelled') DEFAULT 'draft',
   scheduled_date TIMESTAMP NULL,
   sent_date TIMESTAMP NULL,
@@ -91,10 +205,12 @@ CREATE TABLE IF NOT EXISTS campaigns (
   total_bounced INT DEFAULT 0,
   total_unsubscribed INT DEFAULT 0,
   created_by INT,
+  updated_by INT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (template_id) REFERENCES templates(template_id) ON DELETE SET NULL,
-  FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL
+  FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+  FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
 -- Campaign Emails table (tracks which contacts received which campaigns)
@@ -116,6 +232,22 @@ CREATE TABLE IF NOT EXISTS campaign_emails (
   FOREIGN KEY (campaign_id) REFERENCES campaigns(campaign_id) ON DELETE CASCADE,
   FOREIGN KEY (contact_id) REFERENCES contacts(contact_id) ON DELETE CASCADE,
   UNIQUE KEY unique_campaign_contact (campaign_id, contact_id)
+);
+
+-- Campaign recipient snapshots table (preserves send-time recipients history)
+CREATE TABLE IF NOT EXISTS campaign_recipient_snapshots (
+  snapshot_id INT PRIMARY KEY AUTO_INCREMENT,
+  campaign_id INT NOT NULL,
+  contact_id INT NULL,
+  recipient_name VARCHAR(255) NULL,
+  recipient_email VARCHAR(255) NOT NULL,
+  recipient_initials VARCHAR(10) NULL,
+  recipient_type VARCHAR(10) NOT NULL DEFAULT 'to',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(campaign_id) ON DELETE CASCADE,
+  UNIQUE KEY unique_campaign_recipient_email (campaign_id, recipient_email),
+  INDEX idx_campaign_snapshot_campaign (campaign_id),
+  INDEX idx_campaign_snapshot_email (recipient_email)
 );
 
 -- Email Events table (detailed tracking of all email interactions)
@@ -161,11 +293,11 @@ CREATE TABLE IF NOT EXISTS import_logs (
 
 -- Seed role-based users
 -- Admin login: admin@gmail.com / Admin@123
--- Marketing login: slesharawal3@gmail.com / Marketing@123
+-- User login: slesharawal3@gmail.com
 INSERT INTO users (user_email, user_password, user_name, user_role, user_status)
 VALUES
 ('admin@gmail.com', '$2b$10$08ktWZFTeK7.jBFWIQoLIOxyUYMTkhGCcUBI2r4q5PGFfqfPlfysG', 'Admin User', 'admin', 'active'),
-('slesharawal3@gmail.com', '$2b$10$YDLTkV8wbuInzZu6rQZ5pe.eZhndyKa4o.yA2DsManGj8icseYY2i', 'Marketing User', 'marketing', 'active')
+('slesharawal3@gmail.com', '$2b$10$YDLTkV8wbuInzZu6rQZ5pe.eZhndyKa4o.yA2DsManGj8icseYY2i', 'Regular User', 'users', 'active')
 ON DUPLICATE KEY UPDATE user_email = VALUES(user_email);
 
 -- Insert sample contacts for testing
@@ -187,9 +319,6 @@ INSERT INTO campaigns (
   campaign_subject,
   campaign_body,
   template_id,
-  sender_name,
-  sender_email,
-  reply_to_email,
   contact_segment,
   campaign_status,
   scheduled_date,
@@ -208,9 +337,6 @@ INSERT INTO campaigns (
   'Welcome to our March product update',
   'Hello {{name}}, welcome to the March update campaign.',
   1,
-  'Marketing Team',
-  'slesharawal3@gmail.com',
-  'admin@gmail.com',
   'all',
   'sent',
   NULL,
@@ -229,9 +355,6 @@ INSERT INTO campaigns (
   'A new release is coming soon',
   'Hello {{name}}, get ready for our next release.',
   2,
-  'Marketing Team',
-  'slesharawal3@gmail.com',
-  'admin@gmail.com',
   'active',
   'scheduled',
   DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 7 DAY),

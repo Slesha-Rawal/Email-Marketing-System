@@ -1,11 +1,12 @@
 import fs from "fs";
 import { promises as dnsPromises } from "dns";
-import { queryDb } from "../utils/db.js";
+
 import { processEmailCsv } from "../utils/emailCsvProcessor.js";
 import {
   isDisposableDomain,
   loadDisposableDomainsFromFile,
 } from "../utils/disposableDomainService.js";
+import { queryDb } from "../utils/db.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_STATUSES = new Set(["active", "unsubscribed", "bounced"]);
@@ -196,13 +197,92 @@ const deleteContact = async (req, res) => {
   const { id } = req.params;
 
   try {
+    const contactRows = await queryDb(
+      `SELECT contact_id, contact_name, contact_email
+       FROM contacts
+       WHERE contact_id = ?
+       LIMIT 1`,
+      [id],
+    );
+
+    if (contactRows.length === 0) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    const contact = contactRows[0];
+    const recipientName =
+      contact.contact_name || toDisplayNameFromEmail(contact.contact_email);
+    const recipientEmail = String(contact.contact_email || "")
+      .trim()
+      .toLowerCase();
+    const recipientInitials = (() => {
+      const nameTokens = String(recipientName)
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+
+      if (nameTokens.length >= 2) {
+        return `${(nameTokens[0][0] || "").toUpperCase()}${(nameTokens[nameTokens.length - 1][0] || "").toUpperCase()}`;
+      }
+
+      if (nameTokens.length === 1 && nameTokens[0].length >= 2) {
+        return nameTokens[0].slice(0, 2).toUpperCase();
+      }
+
+      const localPart = recipientEmail.split("@")[0] || "";
+      return localPart.slice(0, 2).toUpperCase() || "NA";
+    })();
+
+    await queryDb(
+      `CREATE TABLE IF NOT EXISTS campaign_recipient_snapshots (
+         snapshot_id INT PRIMARY KEY AUTO_INCREMENT,
+         campaign_id INT NOT NULL,
+         contact_id INT NULL,
+         recipient_name VARCHAR(255) NULL,
+         recipient_email VARCHAR(255) NOT NULL,
+         recipient_initials VARCHAR(10) NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         FOREIGN KEY (campaign_id) REFERENCES campaigns(campaign_id) ON DELETE CASCADE,
+         UNIQUE KEY unique_campaign_recipient_email (campaign_id, recipient_email),
+         INDEX idx_campaign_snapshot_campaign (campaign_id),
+         INDEX idx_campaign_snapshot_email (recipient_email)
+       )`,
+    );
+
+    await queryDb(
+      `INSERT INTO campaign_recipient_snapshots (
+         campaign_id,
+         contact_id,
+         recipient_name,
+         recipient_email,
+         recipient_initials
+       )
+       SELECT
+         ce.campaign_id,
+         ce.contact_id,
+         ?,
+         ?,
+         ?
+       FROM campaign_emails ce
+       INNER JOIN campaigns c ON c.campaign_id = ce.campaign_id
+       WHERE ce.contact_id = ?
+         AND c.campaign_status = 'sent'
+       ON DUPLICATE KEY UPDATE
+         contact_id = COALESCE(campaign_recipient_snapshots.contact_id, VALUES(contact_id)),
+         recipient_name = COALESCE(
+           NULLIF(campaign_recipient_snapshots.recipient_name, ''),
+           VALUES(recipient_name)
+         ),
+         recipient_initials = COALESCE(
+           NULLIF(campaign_recipient_snapshots.recipient_initials, ''),
+           VALUES(recipient_initials)
+         )`,
+      [recipientName, recipientEmail, recipientInitials, contact.contact_id],
+    );
+
     const result = await queryDb("DELETE FROM contacts WHERE contact_id = ?", [
       id,
     ]);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Contact not found" });
-    }
 
     return res.json({ message: "Contact deleted successfully" });
   } catch (err) {

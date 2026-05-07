@@ -1,33 +1,39 @@
 import express from "express";
 import contactController from "../controllers/contactController.js";
 import upload from "../config/multer.js";
-import { authenticate, authorizeRoles } from "../middleware/auth.js";
+import { authenticate, authorizePermission } from "../middleware/auth.js";
+import { PERMISSIONS } from "../config/permissions.js";
 
 const router = express.Router();
 
-router.get("/contacts", authenticate, contactController.getAllContacts);
+router.get(
+  "/contacts",
+  authenticate,
+  authorizePermission(PERMISSIONS.CONTACTS_READ),
+  contactController.getAllContacts,
+);
 router.post(
   "/contacts",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CONTACTS_WRITE),
   contactController.addContact,
 );
 router.put(
   "/contacts/:id",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CONTACTS_WRITE),
   contactController.updateContact,
 );
 router.delete(
   "/contacts/:id",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CONTACTS_WRITE),
   contactController.deleteContact,
 );
 router.post(
   "/contacts/upload",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CONTACTS_WRITE),
   upload.single("file"),
   contactController.uploadCSV,
 );

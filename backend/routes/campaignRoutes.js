@@ -1,49 +1,70 @@
 import express from "express";
 import campaignController from "../controllers/campaignController.js";
-import { authenticate, authorizeRoles } from "../middleware/auth.js";
+import { authenticate, authorizePermission } from "../middleware/auth.js";
+import { PERMISSIONS } from "../config/permissions.js";
 
 const router = express.Router();
 
 router.get("/campaigns/track/open/:trackingId", campaignController.trackOpen);
 router.get("/campaigns/track/click/:trackingId", campaignController.trackClick);
 router.get("/campaigns/unsubscribe", campaignController.unsubscribeRecipient);
+router.post(
+  "/campaigns/unsubscribe/feedback",
+  campaignController.saveUnsubscribeFeedback,
+);
 
-router.get("/campaigns", authenticate, campaignController.getAllCampaigns);
-router.get("/campaigns/:id", authenticate, campaignController.getCampaignById);
+router.get(
+  "/campaigns",
+  authenticate,
+  authorizePermission(PERMISSIONS.CAMPAIGNS_READ),
+  campaignController.getAllCampaigns,
+);
+router.get(
+  "/campaigns/:id/recipients",
+  authenticate,
+  authorizePermission(PERMISSIONS.CAMPAIGNS_READ),
+  campaignController.getCampaignRecipients,
+);
+router.get(
+  "/campaigns/:id",
+  authenticate,
+  authorizePermission(PERMISSIONS.CAMPAIGNS_READ),
+  campaignController.getCampaignById,
+);
 router.get(
   "/email-logs",
   authenticate,
-  authorizeRoles("marketing", "admin"),
+  authorizePermission(PERMISSIONS.EMAIL_LOGS_READ),
   campaignController.getEmailLogs,
 );
 router.post(
   "/campaigns",
   authenticate,
-  authorizeRoles("marketing", "admin"),
+  authorizePermission(PERMISSIONS.CAMPAIGNS_WRITE),
   campaignController.createCampaign,
 );
 router.put(
   "/campaigns/:id",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CAMPAIGNS_WRITE),
   campaignController.updateCampaign,
 );
 router.post(
   "/campaigns/:id/send",
   authenticate,
-  authorizeRoles("marketing", "admin"),
+  authorizePermission(PERMISSIONS.CAMPAIGNS_SEND),
   campaignController.sendCampaign,
 );
 router.post(
   "/campaigns/:id/send-draft",
   authenticate,
-  authorizeRoles("marketing", "admin"),
+  authorizePermission(PERMISSIONS.CAMPAIGNS_SEND),
   campaignController.sendCampaignDraft,
 );
 router.delete(
   "/campaigns/:id",
   authenticate,
-  authorizeRoles("marketing"),
+  authorizePermission(PERMISSIONS.CAMPAIGNS_WRITE),
   campaignController.deleteCampaign,
 );
 
