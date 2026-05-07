@@ -225,10 +225,7 @@ const parseAllowedOrigins = () => {
     return configuredOrigins;
   }
 
-  return [
-    "http://localhost:5173",
-    "http://localhost:5174",
-  ];
+  return ["http://localhost:5173", "http://localhost:5174"];
 };
 
 const allowedOrigins = parseAllowedOrigins();
@@ -298,6 +295,27 @@ app.use((req, res) => {
   return res.status(404).json({ message: "Route not found" });
 });
 
+// Global error handler for production readiness
+app.use((err, req, res, next) => {
+  console.error("[Global Error Handler]:", err);
+  const status = err.statusCode || 500;
+  const message =
+    process.env.NODE_ENV === "production"
+      ? "Internal Server Error"
+      : err.message;
+  res.status(status).json({ success: false, message, error: message });
+});
+
+// Handle uncaught exceptions and unhandled rejections to prevent crashing
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+const PORT = process.env.PORT || 3001;
+
 // Start server
 const bootstrap = async () => {
   await ensureUserLastLoginColumn();
@@ -306,8 +324,8 @@ const bootstrap = async () => {
   await ensureAuthSecurityTables();
   await ensureContactsUtf8mb4();
 
-  app.listen(3001, () => {
-    console.log("Server is running on port 3001");
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
     startCampaignScheduler();
 
     startDisposableDomainAutoUpdate().catch((error) => {
