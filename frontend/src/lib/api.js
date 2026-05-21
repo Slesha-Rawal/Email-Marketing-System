@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import { AUTH_STORAGE_KEY } from "./authStorage.js";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://34.207.179.4:3001/api",
+  baseURL: import.meta.env.VITE_API_URL,
   withCredentials: true,
 });
 

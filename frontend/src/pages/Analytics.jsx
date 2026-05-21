@@ -23,7 +23,6 @@ const Analytics = () => {
   const [endDate, setEndDate] = useState("");
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [chartReady, setChartReady] = useState(false);
   const [campaignNameSearch, setCampaignNameSearch] = useState("");
   const [stats, setStats] = useState({
     emailsSent: 0,
@@ -82,15 +81,6 @@ const Analytics = () => {
 
     fetchAnalytics();
   }, []);
-
-  useEffect(() => {
-    setChartReady(false);
-    const timerId = window.setTimeout(() => setChartReady(true), 50);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [campaignPerformance, startDate, endDate]);
 
   const filteredCampaignPerformance = useMemo(() => {
     if (!startDate && !endDate) {

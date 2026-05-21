@@ -355,159 +355,134 @@ const TopCampaignsListCard = ({ campaigns, ready }) => {
   );
 };
 
-const FeedbackResultsBarChart = ({ results, ready }) => {
-  const width = 920;
-  const height = 290;
-  const leftPad = 42;
-  const rightPad = 20;
-  const topPad = 22;
-  const bottomPad = 70;
+const FeedbackResultsBarChart = ({ results }) => {
+  const peak = Math.max(1, ...results.map((r) => Number(r.count || 0)));
+  const yAxisMax = peak + 2;
 
-  const maxCount = Math.max(
-    1,
-    ...results.map((item) => Number(item.count || 0)),
-  );
-  const peak = maxCount <= 5 ? maxCount + 2 : Math.ceil(maxCount * 1.2);
-  const chartHeight = height - topPad - bottomPad;
-  const chartWidth = width - leftPad - rightPad;
-  const slotWidth = chartWidth / Math.max(1, results.length);
+  const options = {
+    chart: {
+      type: "bar",
+      toolbar: { show: false },
+      animations: {
+        enabled: true,
+        easing: "easeinout",
+        speed: 800,
+        dynamicAnimation: {
+          enabled: true,
+          speed: 350,
+        },
+      },
+    },
+    plotOptions: {
+      bar: {
+        borderRadius: 6,
+        columnWidth: "25%",
+        dataLabels: {
+          position: "top", // top, center, bottom
+        },
+      },
+    },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => val,
+      offsetY: -20,
+      style: {
+        fontSize: "12px",
+        colors: ["#304758"],
+      },
+    },
+    xaxis: {
+      categories: results.map((r) => formatFeedbackReason(r.reason)),
+      position: "bottom",
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      tooltip: { enabled: false },
+    },
+    yaxis: {
+      max: yAxisMax,
+      tickAmount: yAxisMax,
+      labels: {
+        formatter: (val) => Math.round(val),
+      },
+    },
+    colors: ["#4F46E5"],
+    fill: {
+      type: "gradient",
+      gradient: {
+        shade: "light",
+        type: "vertical",
+        shadeIntensity: 0.25,
+        inverseColors: false,
+        opacityFrom: 1,
+        opacityTo: 0.8,
+        stops: [0, 100],
+      },
+    },
+  };
 
-  const tickValues = Array.from(
-    new Set([0, 0.25, 0.5, 0.75, 1].map((factor) => Math.round(peak * factor))),
-  ).sort((a, b) => b - a);
-
-  const yTicks = tickValues.map((val) => {
-    return {
-      id: `feedback-tick-${val}`,
-      y: topPad + chartHeight - (val / peak) * chartHeight,
-      value: val,
-    };
-  });
-
-  const bars = results.map((item, index) => {
-    const value = Number(item.count || 0);
-    const barWidth = Math.min(74, slotWidth * 0.58);
-    const x = leftPad + index * slotWidth + (slotWidth - barWidth) / 2;
-    const scaledHeight = (value / peak) * chartHeight;
-    const barHeight = value > 0 ? Math.max(6, scaledHeight) : 0;
-    const y = topPad + chartHeight - barHeight;
-
-    // Prevent top label from extending beyond SVG bounds
-    const isNearTop = y <= topPad + 18;
-    const labelY = isNearTop ? y + 14 : y - 8;
-    const labelFill = isNearTop ? "#FFFFFF" : "#4B5563";
-
-    return {
-      reason: item.reason,
-      value,
-      x,
-      y,
-      barWidth,
-      barHeight,
-      centerX: x + barWidth / 2,
-      labelY,
-      labelFill,
-    };
-  });
+  const series = [
+    {
+      name: "Count",
+      data: results.map((r) => Number(r.count || 0)),
+    },
+  ];
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-72 w-full">
-        {yTicks.map((tick) => (
-          <g key={tick.id}>
-            <line
-              x1={leftPad}
-              y1={tick.y}
-              x2={width - rightPad}
-              y2={tick.y}
-              stroke="#E5E7EB"
-              strokeWidth="1"
-            />
-            <text
-              x={10}
-              y={tick.y + 4}
-              fontSize="11"
-              fill="#6B7280"
-              fontFamily="inherit"
-            >
-              {tick.value}
-            </text>
-          </g>
-        ))}
-
-        {bars.map((bar) => (
-          <g key={`feedback-bar-${bar.reason}`}>
-            <rect
-              x={bar.x}
-              y={ready ? bar.y : topPad + chartHeight}
-              width={bar.barWidth}
-              height={ready ? bar.barHeight : 0}
-              rx="8"
-              fill="url(#feedbackBarGradientOverview)"
-              style={{ transition: "height 850ms ease, y 850ms ease" }}
-            />
-            <text
-              x={bar.centerX}
-              y={bar.labelY}
-              textAnchor="middle"
-              fontSize="11"
-              fill={bar.labelFill}
-              fontFamily="inherit"
-              opacity={ready ? 1 : 0}
-              style={{ transition: "opacity 400ms ease 200ms" }}
-            >
-              {bar.value}
-            </text>
-            <text
-              x={bar.centerX}
-              y={height - 16}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#6B7280"
-              fontFamily="inherit"
-            >
-              {formatFeedbackReason(bar.reason)}
-            </text>
-          </g>
-        ))}
-
-        <defs>
-          <linearGradient
-            id="feedbackBarGradientOverview"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#A5B4FC" stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-      </svg>
+      <ReactApexChart
+        options={options}
+        series={series}
+        type="bar"
+        height={320}
+      />
     </div>
   );
 };
 
-const EngagementSplitWidget = ({ total, opens, clicks, chartReady }) => {
+const EngagementSplitWidget = ({ total, opens, clicks }) => {
   const safeTotal = Math.max(Number(total || 0), 1);
   const opensValue = Number(opens || 0);
   const clicksValue = Number(clicks || 0);
   const remainingValue = Math.max(safeTotal - opensValue - clicksValue, 0);
 
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
+  const series = [opensValue, clicksValue, remainingValue];
 
-  const opensPct = opensValue / safeTotal;
-  const clicksPct = clicksValue / safeTotal;
-  const remainingPct = remainingValue / safeTotal;
-
-  const opensDash = `${circumference * opensPct} ${circumference}`;
-  const clicksDash = `${circumference * clicksPct} ${circumference}`;
-  const remainingDash = `${circumference * remainingPct} ${circumference}`;
-
-  const opensOffset = 0;
-  const clicksOffset = -circumference * opensPct;
-  const remainingOffset = -circumference * (opensPct + clicksPct);
+  const options = {
+    chart: {
+      type: "donut",
+    },
+    labels: ["Opens", "Clicks", "Remaining"],
+    colors: ["#8B8AE6", "#8FB6D9", "#E6C26A"],
+    plotOptions: {
+      pie: {
+        donut: {
+          size: "60%",
+        },
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    legend: {
+      show: true,
+      position: "bottom",
+      itemMargin: {
+        horizontal: 10,
+        vertical: 5,
+      },
+      markers: {
+        radius: 12,
+      },
+    },
+    stroke: {
+      width: 2,
+    },
+    tooltip: {
+      y: {
+        formatter: (val) => `${val} (${((val / safeTotal) * 100).toFixed(1)}%)`,
+      },
+    },
+  };
 
   return (
     <div className="rounded-md border border-indigo-200/60 bg-white p-6 flex flex-col h-full">
@@ -516,92 +491,14 @@ const EngagementSplitWidget = ({ total, opens, clicks, chartReady }) => {
         Open, click, and remaining share
       </p>
 
-      <div className="mx-auto flex w-full flex-col items-center flex-1">
-        <svg viewBox="0 0 160 160" className="h-56 w-56 -rotate-90">
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#e5e7eb"
-            strokeWidth="16"
-            fill="none"
-          />
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#8B8AE6"
-            strokeWidth="16"
-            fill="none"
-            strokeDasharray={opensDash}
-            strokeDashoffset={chartReady ? opensOffset : circumference}
-            strokeLinecap="butt"
-            style={{ transition: "stroke-dashoffset 900ms ease" }}
-          />
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#8FB6D9"
-            strokeWidth="16"
-            fill="none"
-            strokeDasharray={clicksDash}
-            strokeDashoffset={chartReady ? clicksOffset : circumference}
-            strokeLinecap="butt"
-            style={{ transition: "stroke-dashoffset 1000ms ease" }}
-          />
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#E6C26A"
-            strokeWidth="16"
-            fill="none"
-            strokeDasharray={remainingDash}
-            strokeDashoffset={chartReady ? remainingOffset : circumference}
-            strokeLinecap="butt"
-            style={{ transition: "stroke-dashoffset 1100ms ease" }}
-          />
-        </svg>
-
-        <div className="mt-6 grid w-full grid-cols-1 gap-2 text-sm text-gray-600">
-          <p className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: "#8B8AE6" }}
-              />{" "}
-              Opens
-            </span>
-            <span className="font-medium">
-              {Number((opensValue / safeTotal) * 100).toFixed(1)}%
-            </span>
-          </p>
-          <p className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: "#8FB6D9" }}
-              />{" "}
-              Clicks
-            </span>
-            <span className="font-medium">
-              {Number((clicksValue / safeTotal) * 100).toFixed(1)}%
-            </span>
-          </p>
-          <p className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: "#E6C26A" }}
-              />{" "}
-              Remaining
-            </span>
-            <span className="font-medium">
-              {Number((remainingValue / safeTotal) * 100).toFixed(1)}%
-            </span>
-          </p>
-        </div>
+      <div className="mx-auto flex w-full flex-col items-center flex-1 justify-center">
+        <ReactApexChart
+          options={options}
+          series={series}
+          type="donut"
+          height={260}
+          width="100%"
+        />
       </div>
     </div>
   );
@@ -828,7 +725,6 @@ function Overview() {
                 total={engagementSplitTotal}
                 opens={summary.totalOpened}
                 clicks={summary.totalClicked}
-                chartReady={chartReady}
               />
             </div>
           </section>
@@ -910,10 +806,7 @@ function Overview() {
               </button>
             </div>
 
-            <FeedbackResultsBarChart
-              results={unsubscribeFeedbackResults}
-              ready={chartReady}
-            />
+            <FeedbackResultsBarChart results={unsubscribeFeedbackResults} />
           </section>
         </main>
       </div>

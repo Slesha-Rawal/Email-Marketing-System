@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Pagination from "../components/Pagination.jsx";
 import api from "../lib/api.js";
+import ReactApexChart from "react-apexcharts";
 
 const FEEDBACK_REASON_LABELS = {
   too_frequent: "Too Frequent",
@@ -43,117 +44,86 @@ const formatDateTime = (value) => {
   return parsed.toLocaleString();
 };
 
-const FeedbackResultsBarChart = ({ results, ready }) => {
-  const width = 920;
-  const height = 290;
-  const leftPad = 42;
-  const rightPad = 20;
-  const topPad = 22;
-  const bottomPad = 70;
+const FeedbackResultsBarChart = ({ results }) => {
+  const peak = Math.max(1, ...results.map((r) => Number(r.count || 0)));
+  const yAxisMax = peak + 2;
 
-  const peak = Math.max(1, ...results.map((item) => Number(item.count || 0)));
-  const chartHeight = height - topPad - bottomPad;
-  const chartWidth = width - leftPad - rightPad;
-  const slotWidth = chartWidth / Math.max(1, results.length);
+  const options = {
+    chart: {
+      type: "bar",
+      toolbar: { show: false },
+      animations: {
+        enabled: true,
+        easing: "easeinout",
+        speed: 800,
+        dynamicAnimation: {
+          enabled: true,
+          speed: 350,
+        },
+      },
+    },
+    plotOptions: {
+      bar: {
+        borderRadius: 6,
+        columnWidth: "25%",
+        dataLabels: {
+          position: "top", // top, center, bottom
+        },
+      },
+    },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => val,
+      offsetY: -20,
+      style: {
+        fontSize: "12px",
+        colors: ["#304758"],
+      },
+    },
+    xaxis: {
+      categories: results.map((r) => formatReason(r.reason)),
+      position: "bottom",
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      tooltip: { enabled: false },
+    },
+    yaxis: {
+      max: yAxisMax,
+      tickAmount: yAxisMax,
+      labels: {
+        formatter: (val) => Math.round(val),
+      },
+    },
+    colors: ["#4F46E5"],
+    fill: {
+      type: "gradient",
+      gradient: {
+        shade: "light",
+        type: "vertical",
+        shadeIntensity: 0.25,
+        inverseColors: false,
+        opacityFrom: 1,
+        opacityTo: 0.8,
+        stops: [0, 100],
+      },
+    },
+  };
 
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((factor) => ({
-    y: topPad + factor * chartHeight,
-    value: Math.round(peak * (1 - factor)),
-  }));
-
-  const bars = results.map((item, index) => {
-    const value = Number(item.count || 0);
-    const barWidth = Math.min(74, slotWidth * 0.58);
-    const x = leftPad + index * slotWidth + (slotWidth - barWidth) / 2;
-    const scaledHeight = (value / peak) * chartHeight;
-    const barHeight = value > 0 ? Math.max(6, scaledHeight) : 0;
-    const y = topPad + chartHeight - barHeight;
-
-    return {
-      reason: item.reason,
-      value,
-      x,
-      y,
-      barWidth,
-      barHeight,
-      centerX: x + barWidth / 2,
-    };
-  });
+  const series = [
+    {
+      name: "Count",
+      data: results.map((r) => Number(r.count || 0)),
+    },
+  ];
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-72 w-full">
-        {yTicks.map((tick) => (
-          <g key={`feedback-insights-tick-${tick.value}`}>
-            <line
-              x1={leftPad}
-              y1={tick.y}
-              x2={width - rightPad}
-              y2={tick.y}
-              stroke="#E5E7EB"
-              strokeWidth="1"
-            />
-            <text
-              x={10}
-              y={tick.y + 4}
-              fontSize="11"
-              fill="#6B7280"
-              fontFamily="inherit"
-            >
-              {tick.value}
-            </text>
-          </g>
-        ))}
-
-        {bars.map((bar) => (
-          <g key={`feedback-insights-bar-${bar.reason}`}>
-            <rect
-              x={bar.x}
-              y={ready ? bar.y : topPad + chartHeight}
-              width={bar.barWidth}
-              height={ready ? bar.barHeight : 0}
-              rx="8"
-              fill="url(#feedbackBarGradientInsights)"
-              style={{ transition: "height 850ms ease, y 850ms ease" }}
-            />
-            <text
-              x={bar.centerX}
-              y={bar.y - 8}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#4B5563"
-              fontFamily="inherit"
-              opacity={ready ? 1 : 0}
-              style={{ transition: "opacity 400ms ease 200ms" }}
-            >
-              {bar.value}
-            </text>
-            <text
-              x={bar.centerX}
-              y={height - 16}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#6B7280"
-              fontFamily="inherit"
-            >
-              {formatReason(bar.reason)}
-            </text>
-          </g>
-        ))}
-
-        <defs>
-          <linearGradient
-            id="feedbackBarGradientInsights"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#A5B4FC" stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-      </svg>
+      <ReactApexChart
+        options={options}
+        series={series}
+        type="bar"
+        height={320}
+      />
     </div>
   );
 };
@@ -164,7 +134,6 @@ const UnsubscribeFeedbackInsights = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [chartReady, setChartReady] = useState(false);
   const [responses, setResponses] = useState([]);
   const [chartResults, setChartResults] = useState([]);
   const [searchValue, setSearchValue] = useState("");
@@ -250,15 +219,6 @@ const UnsubscribeFeedbackInsights = () => {
     });
   }, [responses, reasonFilter, searchValue]);
 
-  useEffect(() => {
-    setChartReady(false);
-    const timerId = window.setTimeout(() => setChartReady(true), 60);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [normalizedChartResults]);
-
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -293,15 +253,10 @@ const UnsubscribeFeedbackInsights = () => {
 
           <section className="bg-white rounded-md border border-indigo-200/60 p-6">
             <div className="flex items-center justify-between gap-3 mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Summary
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Summary</h2>
             </div>
 
-            <FeedbackResultsBarChart
-              results={normalizedChartResults}
-              ready={chartReady}
-            />
+            <FeedbackResultsBarChart results={normalizedChartResults} />
 
             {normalizedChartResults.every((item) => item.count === 0) ? (
               <p className="mt-3 text-sm text-gray-500">
@@ -377,7 +332,9 @@ const UnsubscribeFeedbackInsights = () => {
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
                             <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-xs">
-                              {String(item.contact_name || "U")[0].toUpperCase()}
+                              {String(
+                                item.contact_name || "U",
+                              )[0].toUpperCase()}
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">
