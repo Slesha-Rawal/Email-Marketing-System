@@ -1,7 +1,7 @@
 import express from "express";
 import templateController from "../controllers/templateController.js";
 import { authenticate, authorizePermission } from "../middleware/auth.js";
-import imageUpload from "../config/imageUpload.js";
+import imageUpload from "../middleware/imageUpload.js";
 import { PERMISSIONS } from "../config/permissions.js";
 
 const router = express.Router();

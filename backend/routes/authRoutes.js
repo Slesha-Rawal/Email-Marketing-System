@@ -1,6 +1,6 @@
 import express from "express";
 import authController from "../controllers/authController.js";
-import profileAvatarUpload from "../config/profileAvatarUpload.js";
+import profileAvatarUpload from "../middleware/profileAvatarUpload.js";
 import {
   authenticate,
   authenticateTokenOnly,

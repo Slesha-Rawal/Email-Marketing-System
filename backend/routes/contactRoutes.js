@@ -1,6 +1,6 @@
 import express from "express";
 import contactController from "../controllers/contactController.js";
-import upload from "../config/multer.js";
+import upload from "../middleware/multer.js";
 import { authenticate, authorizePermission } from "../middleware/auth.js";
 import { PERMISSIONS } from "../config/permissions.js";
 
